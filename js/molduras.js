@@ -71,13 +71,38 @@ export function acharMolduras(img, fracaoConversa = 0.695) {
     }
     const esp = topo.fim - topo.ini + 2;
     const largura = x1 - x0;
-    molduras.push({
-      modo: 'moldura',
-      x: x0 + esp,
-      y: topo.fim + 1,
-      w: Math.round(largura * fracaoConversa) - esp,
-      h: base.ini - topo.fim - 1,
-    });
+    const r = { modo: 'moldura', x: x0 + esp, y: topo.fim + 1, w: largura - 2 * esp, h: base.ini - topo.fim - 1 };
+    // Só a conversa: corta na divisória do painel de contato (cada colaborador tem uma largura de tela)
+    const div = acharDivisoria(img, r);
+    if (div) { r.w = div - r.x - 2; r.fracao = 1; }
+    else { r.w = Math.round(largura * fracaoConversa) - esp; r.fracao = 1; }
+    molduras.push(r);
   }
   return molduras;
+}
+
+// Divisória vertical entre a conversa e o painel de contato, dentro de uma moldura.
+// Procura a coluna com uma linha fina mais escura que os dois lados (ou mudança de fundo) em quase toda a altura.
+// Devolve o x (em pixels da página) ou null.
+export function acharDivisoria(img, r) {
+  const { data, width: W } = img;
+  const lum = (i) => (data[i] * 3 + data[i + 1] * 6 + data[i + 2]) / 10;
+  const y0 = r.y + Math.round(r.h * 0.12), y1 = r.y + Math.round(r.h * 0.88);
+  let melhor = null, best = 0, melhorF = null, bestF = 0;
+  for (let x = r.x + Math.round(r.w * 0.55); x < r.x + Math.round(r.w * 0.93); x++) {
+    let c = 0, n = 0, claro = 0;
+    for (let y = y0; y < y1; y += 3) {
+      const i = (y * W + x) * 4;
+      const L = lum(i), Le = lum(i - 12), Ld = lum(i + 12);
+      n++;
+      if (L > 120 && L < Le - 3 && L < Ld - 3) c++;
+      // mudança de fundo: à direita (painel) mais claro e liso que à esquerda (conversa)
+      const Ld2 = lum(i + 24), Le2 = lum(i - 24);
+      if (Ld > 225 && Math.abs(Ld - Ld2) < 4 && Ld - Le > 6 && Ld - Le2 > 6) claro++;
+    }
+    if (c / n > best) { best = c / n; melhor = x; }
+    if (claro / n > bestF) { bestF = claro / n; melhorF = x; }
+  }
+  if (best > 0.55) return melhor;
+  return bestF > 0.6 ? melhorF : null;
 }

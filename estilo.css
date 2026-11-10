@@ -168,3 +168,35 @@ body.com-print main.lado-a-lado .coluna { height: 100%; overflow-y: auto; paddin
 .bolha.parte { background: #fff; align-self: flex-start; }
 .bolha.servidor { background: #d9fdd3; align-self: flex-end; }
 .bolha small { display: block; text-align: right; color: #667781; font-size: .78em; margin-top: 2px; }
+
+/* v0.8 ------------------------------------------------------------------ */
+/* Visor: o print fica centrado quando cabe e rola para os dois lados quando aumenta */
+.visor-conteudo { display: block; text-align: center; }
+.visor-conteudo > * { display: block; margin: 0 auto 12px; }
+.visor-conteudo canvas, .visor-conteudo img { margin-left: auto; margin-right: auto; }
+.visor-conteudo .conversa-lida { text-align: left; }
+
+/* Ações sobre a lista de conversas */
+.acoes-fontes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.acoes-fontes .espera { font-size: 13px; color: var(--marca); background: var(--marca-clara); padding: 6px 10px; border-radius: 6px; }
+
+/* Escolha do ato e da parte, no topo da certidão */
+.escolha { display: grid; gap: 8px; margin: -4px 0 14px; padding: 10px 12px; border: 1px solid var(--alerta-borda); background: var(--alerta-fundo); border-radius: 8px; }
+.escolha.confirmada { border-color: var(--linha); background: #f7f7f4; }
+.escolha-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 14px; }
+.escolha-linha > span { font-weight: 600; color: var(--marca); min-width: 44px; }
+.escolha-linha small { color: var(--suave); }
+.segmentos { display: inline-flex; border: 1px solid #b9c4d3; border-radius: 8px; overflow: hidden; }
+.segmentos button { background: #fff; color: var(--tinta); border-radius: 0; font-weight: 600; padding: 6px 14px; border-right: 1px solid #b9c4d3; }
+.segmentos button:last-child { border-right: 0; }
+.segmentos button.ativo { background: var(--marca); color: #fff; }
+.mini-sel { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--suave); }
+.mini-sel select { padding: 4px 6px; }
+
+/* Contatos tentados (certidão frustrada) */
+.grade .largo4, .grade .contatos { grid-column: 1 / -1; }
+.contatos-cab { font-size: 13px; font-weight: 600; color: var(--suave); margin-bottom: 6px; }
+.contatos-cab small { font-weight: 400; }
+.contato-linha { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, .9fr) minmax(0, .6fr) minmax(0, 1.8fr); gap: 8px; margin-bottom: 6px; }
+.contato-linha input, .contato-linha select { width: 100%; min-width: 0; }
+@media (max-width: 1400px) { .contato-linha { grid-template-columns: 1fr 1fr; } }

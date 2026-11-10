@@ -1,8 +1,8 @@
 // Leitura dos arquivos anexados: PDF (texto + imagens dos prints) e imagens soltas.
 // Tudo acontece no navegador, sem enviar nada para fora.
 import * as pdfjsLib from '../lib/pdfjs/pdf.min.mjs';
-import { acharMolduras, retangulosDeImagens } from './molduras.js?v=0.7';
-import * as N from './nucleo.js?v=0.7';
+import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.8';
+import * as N from './nucleo.js?v=0.8';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -79,20 +79,48 @@ async function comLeitor(fn) {
     if (p.fila.length) p.fila.shift()(w); else p.livres.push(w);
   }
 }
-async function ocrCanvas(canvas) {
-  const { data } = await comLeitor((w) => w.recognize(canvas, {}, { text: true, blocks: true }));
+const paraLinhas = (data) => {
   let linhas = data.lines;
   if (!linhas && data.blocks) linhas = data.blocks.flatMap((b) => (b.paragraphs || []).flatMap((p) => p.lines || []));
   return (linhas || []).map((l) => ({ texto: (l.text || '').trim(), x0: l.bbox.x0, x1: l.bbox.x1, y0: l.bbox.y0, y1: l.bbox.y1 }));
+};
+async function ocrCanvas(canvas, psm = '4') {
+  return comLeitor(async (w) => {
+    if (psm !== '4') await w.setParameters({ tessedit_pageseg_mode: psm });
+    try {
+      const { data } = await w.recognize(canvas, {}, { text: true, blocks: true });
+      let linhas = paraLinhas(data);
+      // letra miúda: a leitura por blocos perde os carimbos de hora; segunda leitura esparsa só para eles
+      if (psm === '4' && N.precisaSegundaLeitura(linhas)) {
+        await w.setParameters({ tessedit_pageseg_mode: '11' });
+        const r2 = await w.recognize(canvas, {}, { text: true, blocks: true });
+        linhas = N.juntarCarimbos(linhas, paraLinhas(r2.data));
+      }
+      return linhas;
+    } finally {
+      await w.setParameters({ tessedit_pageseg_mode: '4' });
+    }
+  });
 }
 
 // Recorta a região e amplia (melhora muito o reconhecimento)
-function recorteAmpliado(origem, r) {
+function luminanciaMedia(origem, r) {
   const c = document.createElement('canvas');
-  c.width = Math.round(r.w * AMPLIACAO); c.height = Math.round(r.h * AMPLIACAO);
+  c.width = 48; c.height = 48;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(origem, r.x, r.y, r.w, r.h, 0, 0, 48, 48);
+  const d = ctx.getImageData(0, 0, 48, 48).data;
+  let soma = 0;
+  for (let i = 0; i < d.length; i += 4) soma += (d[i] * 3 + d[i + 1] * 6 + d[i + 2]) / 10;
+  return soma / (d.length / 4);
+}
+// Recorta a região e amplia (melhora muito o reconhecimento); tela escura (modo escuro, barra do Windows) é invertida
+function recorteAmpliado(origem, r, ampliacao = AMPLIACAO) {
+  const c = document.createElement('canvas');
+  c.width = Math.round(r.w * ampliacao); c.height = Math.round(r.h * ampliacao);
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  ctx.filter = 'grayscale(1)';
+  ctx.filter = luminanciaMedia(origem, r) < 110 ? 'grayscale(1) invert(1)' : 'grayscale(1)';
   ctx.drawImage(origem, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
   return c;
 }
@@ -104,7 +132,22 @@ function regioesDoCanvas(canvas, retImagens) {
   let regioes = acharMolduras(img);
   if (!regioes.length && retImagens && retImagens.length) regioes = retImagens.map((r) => ({ ...r, modo: 'livre' }));
   if (!regioes.length) regioes = [{ x: 0, y: 0, w: canvas.width, h: canvas.height, modo: 'livre' }];
+  regioes.sort((a, b) => a.y - b.y);
+  // Prints livres com painel de contato à direita: a conversa e o painel são lidos separados
+  for (const r of [...regioes]) {
+    if (r.modo === 'moldura' || r.painel) continue;
+    const div = acharDivisoria(img, r);
+    if (div) { const pw = r.x + r.w - div - 2; r.w = div - r.x - 1; regioes.push({ x: div + 2, y: r.y, w: pw, h: r.h, modo: 'livre', painel: r }); }
+  }
   return regioes;
+}
+
+// Relógio da barra de tarefas (canto inferior direito, escuro): data e hora da captura
+function cantoDaBarra(canvas, r) {
+  const bw = Math.round(r.w * 0.2), bh = Math.max(12, Math.round(r.h * 0.045));
+  const fundo = { x: r.x + r.w - bw, y: r.y + r.h - Math.round(bh / 2), w: bw, h: Math.round(bh / 2) };
+  if (luminanciaMedia(canvas, fundo) >= 90) return null;
+  return { x: r.x + r.w - bw, y: r.y + r.h - bh, w: bw, h: bh };
 }
 
 // Fila de OCR com aviso de andamento
@@ -112,11 +155,17 @@ function criarFila(aviso) {
   const tarefas = [];
   let feitas = 0;
   return {
-    adicionar(canvas, modo) {
-      const t = ocrCanvas(canvas).then((linhas) => {
+    adicionar(canvas, extra = {}, barra = null) {
+      const t = Promise.all([ocrCanvas(canvas), barra ? ocrCanvas(barra.canvas, '6') : null]).then(([linhas, linhasBarra]) => {
         feitas++;
         aviso && aviso(`Lendo as telas da conversa: ${feitas} de ${tarefas.length}…`);
-        return { largura: canvas.width, altura: canvas.height, linhas, modo };
+        if (linhasBarra) {
+          const k = canvas.width / barra.r.w; // posição do canto dentro da tela ampliada
+          for (const l of linhasBarra) linhas.push({ texto: l.texto, barra: true,
+            x0: (barra.dx + l.x0 / barra.amp) * k, x1: (barra.dx + l.x1 / barra.amp) * k,
+            y0: (barra.dy + l.y0 / barra.amp) * k, y1: (barra.dy + l.y1 / barra.amp) * k });
+        }
+        return { largura: canvas.width, altura: canvas.height, linhas, ...extra };
       });
       tarefas.push(t);
       return t;
@@ -154,9 +203,24 @@ function telaDoTexto(itens, vp) {
   };
 }
 
-// Analisa um arquivo e devolve { tipo:'conversa'|'email', meta, f, msgs }
+// Lê as regiões de um canvas (página ou imagem) e põe na fila de OCR
+function lerRegioes(canvas, regioes, fila, rotuloDe) {
+  for (const r of regioes) {
+    const extra = { modo: r.modo, fracao: r.fracao, rotulo: rotuloDe ? rotuloDe(r) : '', regiao: r, painelDe: r.painel || null };
+    let barra = null;
+    // o canto da barra fica na região mais à direita: o painel, se houver, ou a própria região
+    if (r.modo !== 'moldura' && !regioes.some((x) => x.painel === r)) {
+      const canto = cantoDaBarra(canvas, r);
+      if (canto) barra = { canvas: recorteAmpliado(canvas, canto, 3), r, amp: 3, dx: canto.x - r.x, dy: canto.y - r.y };
+    }
+    fila.adicionar(recorteAmpliado(canvas, r), extra, barra);
+  }
+}
+
+// Analisa um arquivo e devolve uma lista: um resultado por número de telefone (ou o e-mail)
 export async function analisarArquivo(arquivo, aviso, temOcr) {
   const nome = arquivo.name || 'arquivo';
+  const doArquivo = N.lerNomeArquivo(nome);
   if (/\.pdf$/i.test(nome) || arquivo.type === 'application/pdf') {
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await arquivo.arrayBuffer()) }).promise;
     const paginas = [];
@@ -165,12 +229,14 @@ export async function analisarArquivo(arquivo, aviso, temOcr) {
       paginas.push({ pg, ...(await textoDaPagina(pg)) });
     }
     const textoTotal = paginas.map((x) => x.texto).join('\n');
-    const meta = N.lerMetaPdf(textoTotal);
-    if (meta.ehEmail) return { tipo: 'email', meta, f: N.analisarEmail(textoTotal), arquivo: nome };
+    const meta0 = N.lerMetaPdf(textoTotal);
+    const meta = { ...meta0, nomeArquivo: doArquivo.nome, ato: meta0.ato || doArquivo.ato, status: meta0.status || doArquivo.status, audiencia: doArquivo.audiencia };
+    if (meta.ehEmail) return [{ tipo: 'email', meta, f: N.analisarEmail(textoTotal), arquivo: nome }];
 
     const telasTexto = [];
     const fila = temOcr ? criarFila(aviso) : null;
     if (temOcr) await obterPool(aviso);
+    let rotuloAnterior = '';
     for (let p = 0; p < paginas.length; p++) {
       if (/Imagem enviada por/.test(paginas[p].texto)) continue; // páginas só com fotos enviadas pela parte
       const vp = paginas[p].pg.getViewport({ scale: ESCALA_PAGINA });
@@ -181,27 +247,33 @@ export async function analisarArquivo(arquivo, aviso, temOcr) {
         if (util.length > 60) { telasTexto.push(telaDoTexto(paginas[p].itens, vp)); continue; }
       }
       if (!temOcr) continue;
+      // Números grifados acima de cada print (camada de texto do PDF)
+      const rotulos = paginas[p].itens.filter((it) => /^\s*(\+\s?55\s?)?\(?\d{2}\)?\s?9?\d{4}-?\d{4}\s*$/.test(it.str))
+        .map((it) => ({ tel: N.formatarTelefone(it.str), y: vp.convertToViewportPoint(it.transform[4], it.transform[5])[1] }));
       aviso && aviso(`Preparando a página ${p + 1} de ${paginas.length}…`);
       const canvas = document.createElement('canvas');
       canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
       await paginas[p].pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp, canvas }).promise;
-      for (const r of regioesDoCanvas(canvas, imagens)) fila.adicionar(recorteAmpliado(canvas, r), r.modo);
+      lerRegioes(canvas, regioesDoCanvas(canvas, imagens), fila, (r) => {
+        if (r.painel) return '';
+        const acima = rotulos.filter((x) => x.y < r.y + 8).sort((a, b) => b.y - a.y)[0];
+        if (acima) rotuloAnterior = acima.tel;
+        return rotuloAnterior;
+      });
       canvas.width = canvas.height = 0; // libera memória
     }
-    const telas = telasTexto.concat(fila ? await fila.todas() : []);
-    const msgs = N.telasParaMensagens(telas, meta.ano);
-    const nomes = N.nomesDasPartes(meta.nomeRodape, msgs.titulo);
-    const f = N.analisarConversa(msgs, { ...meta, nome: nomes.join('\n') });
-    f.nomes = nomes.length ? nomes : (f.nome ? [f.nome] : []);
-    if (telas.some((t) => t.modo === 'livre' && t.linhas.length && !telasTexto.includes(t))) {
-      f.avisos.push('Este print não segue o modelo da CIRI: confira com atenção as datas e horas, que costumam ser pequenas na tela.');
+    const telas = N.juntarPaineis(telasTexto.concat(fila ? await fila.todas() : []));
+    if (!telas.length) {
+      const f = N.analisarConversa([], meta);
+      f.nomes = N.escolherNome({ rodape: meta.nomeRodape, arquivo: meta.nomeArquivo });
+      return [semOcr({ tipo: 'conversa', meta, f, msgs: [], arquivo: nome }, temOcr, meta)];
     }
-    if (!temOcr) {
-      // Sem OCR, a situação sai do rodapé do PDF (status dado pelo sistema)
-      f.situacao = { EFETIVADA: 'INT_EXPRESSA', EXPEDIDA: 'CIT_EXPEDIDA', FRUSTRADA: 'FRUST_SEM_RESPOSTA' }[meta.status] || f.situacao;
-      f.avisos = ['O reconhecimento de texto (OCR) não está instalado: li só o cabeçalho e o rodapé do PDF (nome, telefone e status). Escolha a situação e preencha datas e horas.'];
-    }
-    return { tipo: 'conversa', meta, f, msgs, arquivo: nome };
+    const res = N.analisarTelas(telas, meta);
+    const livre = telas.some((t) => t.modo === 'livre' && t.linhas.length && !telasTexto.includes(t));
+    return res.map((r, i) => {
+      if (livre) r.f.avisos.push('Este print não segue o modelo da CIRI: confira com atenção as datas e horas, que costumam ser pequenas na tela.');
+      return semOcr({ tipo: 'conversa', meta, f: r.f, msgs: r.msgs, arquivo: res.length > 1 ? `${nome} · ${r.f.telefone || 'número ' + (i + 1)}` : nome }, temOcr, meta);
+    });
   }
 
   if (/^image\//.test(arquivo.type)) {
@@ -212,17 +284,24 @@ export async function analisarArquivo(arquivo, aviso, temOcr) {
     canvas.getContext('2d').drawImage(bmp, 0, 0);
     await obterPool(aviso);
     const fila = criarFila(aviso);
-    for (const r of regioesDoCanvas(canvas, null)) fila.adicionar(recorteAmpliado(canvas, r), r.modo);
-    const telas = await fila.todas();
-    const ano = new Date().getFullYear();
-    const msgs = N.telasParaMensagens(telas, ano);
-    const nomes = N.nomesDasPartes('', msgs.titulo);
-    const f = N.analisarConversa(msgs, { nome: nomes.join('\n') });
-    f.nomes = nomes.length ? nomes : (f.nome ? [f.nome] : []);
-    f.avisos.push('Confira com atenção as datas e horas: em imagens elas costumam ser pequenas.');
-    return { tipo: 'conversa', meta: { ano }, f, msgs, arquivo: nome };
+    lerRegioes(canvas, regioesDoCanvas(canvas, null), fila, null);
+    const telas = N.juntarPaineis(await fila.todas());
+    const meta = { ano: new Date().getFullYear(), nomeArquivo: doArquivo.nome, ato: doArquivo.ato, status: doArquivo.status, audiencia: doArquivo.audiencia };
+    return N.analisarTelas(telas, meta).map((r, i, todos) => {
+      r.f.avisos.push('Confira com atenção as datas e horas: em imagens elas costumam ser pequenas.');
+      return { tipo: 'conversa', meta, f: r.f, msgs: r.msgs, arquivo: todos.length > 1 ? `${nome} · ${r.f.telefone || 'número ' + (i + 1)}` : nome };
+    });
   }
   throw new Error('Formato não suportado: ' + nome);
+}
+
+function semOcr(fonte, temOcr, meta) {
+  if (temOcr) return fonte;
+  const f = fonte.f;
+  // Sem OCR, a situação sai do rodapé do PDF (status dado pelo sistema)
+  f.situacao = { EFETIVADA: 'INT_EXPRESSA', EXPEDIDA: 'CIT_EXPEDIDA', FRUSTRADA: 'FRUST_SEM_RESPOSTA' }[meta.status] || f.situacao;
+  f.avisos = ['O reconhecimento de texto (OCR) não está instalado: li só o cabeçalho e o rodapé do PDF (nome, telefone e status). Escolha a situação e preencha datas e horas.'];
+  return fonte;
 }
 
 // Mostra o print (PDF ou imagem) no visor, ajustado à largura disponível × zoom

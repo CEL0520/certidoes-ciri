@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Certidões CIRI</title>
-<link rel="stylesheet" href="estilo.css?v=0.7">
+<link rel="stylesheet" href="estilo.css?v=0.8">
 <link rel="icon" href="icones/32.png">
 </head>
 <body>
@@ -41,6 +41,11 @@
     </label>
     <p id="progresso" class="progresso" hidden></p>
     <ul id="fontes" class="fontes"></ul>
+    <div id="acoesFontes" class="acoes-fontes" hidden>
+      <button class="sec" id="adicionarConversa" title="Leia outro número ou e-mail da mesma parte: entra na mesma certidão">+ Adicionar outra conversa</button>
+      <button class="sec" id="novaCertidao">Começar nova certidão</button>
+      <span id="esperaConversa" class="espera" hidden>Abra a outra conversa e clique em <b>Ler conversa</b>; ela entra nesta certidão. Ou arraste o PDF aqui.</span>
+    </div>
     <details id="secLeitor" class="leitor">
       <summary>Ler a conversa direto do chat ou do e-mail, sem print</summary>
       <ol>
@@ -63,26 +68,23 @@
       <label>Ato
         <select id="tipo"><option value="intimacao">Intimação</option><option value="citacao">Citação</option></select>
       </label>
-      <label>Qualificação da parte
-        <select id="qualificacao"></select>
-      </label>
-      <label>Gênero
-        <select id="genero"><option value="auto">Automático (pelo nome)</option><option value="m">Masculino (o qual)</option><option value="f">Feminino (a qual)</option></select>
-      </label>
+      <label class="check"><input type="checkbox" id="pj"> Pessoa jurídica <small>(na pessoa de seu representante legal)</small></label>
       <label class="largo">Nome da parte <small>(um por linha: gera uma certidão para cada)</small>
         <textarea id="nomes" rows="2"></textarea>
       </label>
 
-      <label data-canal="whatsapp">Telefone<input id="telefone"></label>
+      <label data-canal="whatsapp" data-nao-frust>Telefone<input id="telefone"></label>
       <label data-canal="whatsapp" class="check"><input type="checkbox" id="numeroComum"> Número comum a mais de uma parte</label>
       <label data-canal="whatsapp" data-comum class="largo">Texto do número comum<input id="textoComum" value="número comum a ambas as partes"></label>
-      <label data-canal="email">E-mail da parte<input id="email"></label>
+      <label data-canal="email" data-nao-frust>E-mail da parte<input id="email"></label>
 
-      <label data-sit="-FRUST_SEM_RESPOSTA">Data<input id="data" placeholder="dd/mm/aaaa"></label>
-      <label data-sit="-FRUST_SEM_RESPOSTA">Hora<input id="hora" placeholder="13h29"></label>
-      <label data-sit="FRUST_SEM_RESPOSTA" class="largo">Tentativas <small>(uma por linha: dd/mm/aaaa 13h29)</small>
-        <textarea id="tentativas" rows="2"></textarea>
-      </label>
+      <label data-nao-frust>Data<input id="data" placeholder="dd/mm/aaaa"></label>
+      <label data-nao-frust>Hora<input id="hora" placeholder="13h29"></label>
+      <div data-frust class="contatos largo4">
+        <div class="contatos-cab">Contatos tentados <small>(só a primeira abordagem de cada um; a certidão segue a ordem das datas)</small></div>
+        <div id="contatos"></div>
+      </div>
+      <label data-frust class="check largo"><input type="checkbox" id="audFrust"> Mencionar a intimação para a audiência designada <small>(citação)</small></label>
 
       <label data-sit="INT_EXPRESSA INT_TACITA INT_SEM_MANIF">Tipo do ato
         <select id="tipoAto">
@@ -102,12 +104,12 @@
       <label data-sit="CIT_EFETIVADA">Identificação por
         <select id="docTipo"><option value="documento">Foto do documento</option><option value="cpf">Completou o CPF</option></select>
       </label>
-      <label data-sit="CIT_EXPEDIDA_AUD">Data da audiência<input id="audData"></label>
-      <label data-sit="CIT_EXPEDIDA_AUD">Hora da audiência<input id="audHora"></label>
-      <label data-sit="CIT_EXPEDIDA_AUD" class="check"><input type="checkbox" id="audLink"> Recebeu o link de acesso</label>
+      <label data-sit="CIT_EXPEDIDA_AUD CIT_EFETIVADA">Data da audiência<input id="audData" placeholder="(se houver)"></label>
+      <label data-sit="CIT_EXPEDIDA_AUD CIT_EFETIVADA">Hora da audiência<input id="audHora"></label>
+      <label data-sit="CIT_EXPEDIDA_AUD CIT_EFETIVADA" class="check"><input type="checkbox" id="audLink"> Recebeu o link de acesso</label>
 
-      <label data-sit="INT_SEM_MANIF FRUST_SEM_RESPOSTA EMAIL_FRUSTRADA">Encerramento em<input id="encData" placeholder="dd/mm/aaaa"></label>
-      <label data-sit="INT_SEM_MANIF FRUST_SEM_RESPOSTA EMAIL_FRUSTRADA">… às<input id="encHora" placeholder="16h56"></label>
+      <label data-sit="INT_SEM_MANIF">Encerramento em<input id="encData" placeholder="dd/mm/aaaa"></label>
+      <label data-sit="INT_SEM_MANIF">… às<input id="encHora" placeholder="16h56"></label>
 
       <label data-sit="EMAIL_EFETIVADA" class="largo">Documentos remetidos<input id="emailDocs"></label>
       <label data-sit="EMAIL_EFETIVADA">Recebimento acusado em<input id="confData"></label>
@@ -123,13 +125,23 @@
 
   <section class="painel" id="secCertidao" hidden>
     <h2><span class="num">2</span> Certidão</h2>
+    <div id="escolha" class="escolha">
+      <div class="escolha-linha"><span>Ato:</span>
+        <div class="segmentos" id="escolhaAto"><button data-v="citacao">Citação</button><button data-v="intimacao">Intimação</button></div>
+        <small id="escolhaDica"></small>
+      </div>
+      <div class="escolha-linha" id="linhaParte"><span>Parte:</span>
+        <div class="segmentos" id="escolhaParte"><button data-v="requerente">Requerente</button><button data-v="requerida">Requerida</button><button data-v="perito">Perito(a)</button></div>
+        <label class="mini-sel">Qualificação <select id="qualificacao"></select></label>
+      </div>
+    </div>
     <p class="dica">Confira com o print ao lado. Você pode ajustar o texto direto na caixa; se mudar algum dado abaixo, o texto é refeito.</p>
     <div id="certidoes"></div>
   </section>
   </div>
 </main>
 
-<footer class="rodape">Versão 0.7 · os prints são lidos neste computador e não são guardados nem enviados.</footer>
-<script type="module" src="js/app.js?v=0.7"></script>
+<footer class="rodape">Versão 0.8 · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.8"></script>
 </body>
 </html>

@@ -90,12 +90,51 @@
       if (!linhas.has(k)) linhas.set(k, { texto: '[imagem enviada]', x0, x1: r.right - cr.left, y0, y1: r.bottom - cr.top + topo });
     }
   };
+  // WhatsApp Web: cada mensagem guarda, por dentro, data, hora e autor ("[07:26, 05/11/2026] Fulano: ")
+  // e se é recebida (message-in) ou enviada (message-out). Lê isso em vez da posição na tela.
+  const ehWhats = /(^|\.)web\.whatsapp\.com$/.test(location.host) || !!document.querySelector('#main .message-in, #main .message-out');
+  const mensagensWa = new Map();
+  const lerPre = (pre) => {
+    const m = (pre || '').match(/\[(\d{1,2}):(\d{2})\s*([AaPp]\.?\s*[Mm]\.?)?,\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})\]/);
+    if (!m) return null;
+    let h = +m[1];
+    if (m[3]) { const pm = /p/i.test(m[3]); if (pm && h !== 12) h += 12; if (!pm && h === 12) h = 0; }
+    let dia = +m[4], mes = +m[5];
+    if (m[3]) { dia = +m[5]; mes = +m[4]; } // formato americano: [9:35 AM, 7/1/2026]
+    let ano = +m[6]; if (ano < 100) ano += 2000;
+    return { dia, mes, ano, hora: h, min: +m[2] };
+  };
+  const coletarWa = () => {
+    for (const el of document.querySelectorAll('#main .message-in, #main .message-out')) {
+      const linha = el.closest('[data-id]') || el;
+      const id = linha.getAttribute('data-id') || (el.innerText || '').slice(0, 60);
+      if (mensagensWa.has(id)) continue;
+      const pre = el.querySelector('[data-pre-plain-text]');
+      // texto da própria mensagem (sem a mensagem citada, que fica em outro bloco)
+      let texto = '';
+      const sel = pre && [...pre.querySelectorAll('span.selectable-text')].filter((x) => !x.closest('[aria-label*="uot"], .quoted-mention, [data-testid*="quoted"]'));
+      if (sel && sel.length) texto = sel.map((x) => x.innerText).join(' ');
+      else if (pre) texto = pre.innerText;
+      const temImagem = [...el.querySelectorAll('img')].some((im) => im.getBoundingClientRect().width > 90 && /^blob:|^data:image/.test(im.src || ''));
+      if (temImagem) texto = ('[imagem enviada] ' + texto).trim();
+      if (/\.(pdf|jpe?g|png|docx?)\b/i.test(el.innerText || '') && !texto.includes('[arquivo]')) texto = ('[arquivo] ' + texto).trim();
+      texto = texto.replace(/\s+/g, ' ').trim();
+      if (!texto) continue;
+      let tempo = lerPre(pre && pre.getAttribute('data-pre-plain-text'));
+      if (!tempo) { // sem o atributo (fotos, áudios): só a hora visível
+        const hm = (el.innerText || '').match(/(\d{1,2}):(\d{2})\s*$/m);
+        if (hm) tempo = { hora: +hm[1], min: +hm[2], soHora: true };
+      }
+      mensagensWa.set(id, { lado: el.classList.contains('message-out') ? 'servidor' : 'parte', texto, tempo, y: linha.getBoundingClientRect().top + caixa.scrollTop });
+    }
+  };
   avisar('lendo as mensagens…');
   const passo = Math.max(200, caixa.clientHeight * 0.7);
   for (let y = 0, i = 0; i < 400; i++) {
     caixa.scrollTop = y;
     await espera(120);
     coletar();
+    if (ehWhats) coletarWa();
     if (caixa.scrollTop + caixa.clientHeight >= caixa.scrollHeight - 2) break;
     y += passo;
   }
@@ -104,13 +143,40 @@
   const lista = [...linhas.values()].sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
   for (const l of lista) if (/\.(pdf|jpe?g|png|heic|webp)\b/i.test(l.texto) && !/compartilhou|shared/i.test(l.texto)) l.texto = '[arquivo] ' + l.texto;
 
-  const textoPagina = (document.body.innerText || '').slice(0, 200000);
-  const telefones = [...new Set((textoPagina.match(/\+?55\s?\(?\d{2}\)?\s?9?\d{4}-?\d{4}/g) || []))].slice(0, 5);
+  // Telefone: só da conversa aberta (cabeçalho) ou do painel de dados do contato, à direita.
+  // A lista de conversas, à esquerda, é ignorada.
+  const RE_TEL = /\+\s?\d{2}\s?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}|\(\d{2}\)\s?9?\d{4}-?\d{4}/;
+  const limiteEsq = pagina ? 0 : caixa.getBoundingClientRect().left - 4;
+  const listaContatos = ehWhats ? document.querySelector('#pane-side') : null;
+  const cands = [];
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let nt;
+  while ((nt = walk.nextNode())) {
+    const t = (nt.textContent || '').trim();
+    if (t.length > 40 || !RE_TEL.test(t) || !nt.parentElement || aviso.contains(nt.parentElement)) continue;
+    if (listaContatos && listaContatos.contains(nt.parentElement)) continue;
+    const r = nt.parentElement.getBoundingClientRect();
+    if (!r.width || r.right < limiteEsq) continue;           // à esquerda da conversa: lista de contatos
+    if (caixa.contains(nt.parentElement) && !pagina) continue; // dentro das mensagens: número citado no texto
+    cands.push({ t: t.match(RE_TEL)[0], x: r.left });
+  }
+  cands.sort((a, b) => b.x - a.x); // painel da direita primeiro, depois o cabeçalho
+  const telefones = [...new Set(cands.map((c) => c.t))].slice(0, 3);
+  // Nome: cabeçalho da conversa aberta
+  let nome = '';
+  const cabecalho = ehWhats ? document.querySelector('#main header') : null;
+  if (cabecalho) { const sp = cabecalho.querySelector('span[dir="auto"], span[title]'); nome = sp ? (sp.getAttribute('title') || sp.innerText || '').trim() : ''; }
+  let avisoTelefone = '';
+  if (!telefones.length) avisoTelefone = ehWhats
+    ? 'O telefone não aparece: no WhatsApp Web, abra os dados do contato (clique no nome no topo da conversa) e clique de novo em Ler conversa — ou preencha o telefone.'
+    : 'O telefone não aparece na tela: abra o painel de dados do contato e leia de novo, ou preencha o telefone.';
+  if (ehWhats && RE_TEL.test(nome)) { telefones.unshift(nome.match(RE_TEL)[0]); nome = ''; avisoTelefone = ''; }
   const dados = {
     tipo: 'ciri-conversa', versao: 1,
     origem: location.host, titulo: document.title,
     largura: pagina ? window.innerWidth : caixa.clientWidth,
-    linhas: lista, telefones,
+    linhas: lista, telefones, nome, avisoTelefone,
+    mensagens: ehWhats ? [...mensagensWa.values()].sort((a, b) => a.y - b.y).map(({ y, ...m }) => m) : null,
     textoCaixa: (caixa.innerText || '').slice(0, 200000),
     data: new Date().toISOString(),
   };

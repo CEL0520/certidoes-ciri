@@ -26,9 +26,12 @@ texto (OCR), quando não estão nesta pasta `lib/tesseract`.
 
 - Intimação: ciência expressa, ciência tácita, sem manifestação de ciência
 - Citação: efetivada, expedida (somente citação ou com audiência)
-- Frustrada: sem resposta, número sem WhatsApp (erro 404), terceiro
+- Frustrada: sem resposta, número sem WhatsApp (erro 404 ou busca sem resultado), terceiro,
+  respondeu sem se identificar, identificou-se sem comprovar
 - E-mail: efetivada, frustrada
-- Vários contatos frustrados da mesma parte: uma certidão única
+- Pessoa jurídica: "na pessoa de seu representante legal"
+- Vários números e/ou e-mail da mesma parte (no mesmo PDF, em vários PDFs ou lidos um a um):
+  uma certidão única, cada contato com a sua data; se algum contato for efetivado, só ele conta
 
 A análise é uma sugestão. A certidão é sempre revisada por quem assina.
 
