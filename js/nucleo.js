@@ -1004,8 +1004,18 @@ export function juntarPaineis(telas) {
     const dono = telas.find((x) => x.regiao === t.painelDe);
     if (!dono) continue;
     dono.painel = (dono.painel || []).concat(t.linhas.filter((l) => !l.barra).map((l) => ({ ...l, painel: true })));
+    if (t.recortePainel) dono.paineisRecorte = (dono.paineisRecorte || []).concat(t.recortePainel);
     // relógio da barra de tarefas (lido no canto do painel) vai para o canto da conversa
     for (const l of t.linhas.filter((x) => x.barra)) dono.linhas.push({ ...l, x0: dono.largura * 0.93, x1: dono.largura * 0.99, y0: dono.altura * (0.95 + (l.y0 / t.altura - 0.95)), y1: dono.altura * 0.995 });
   }
   return saida;
+}
+
+// Texto da leitura só de dígitos ("+5564992221164 7696715632718 ..."): devolve o telefone, se houver
+export function telefoneDeDigitos(texto) {
+  const toks = (texto || '').split(/\s+/).map((x) => x.replace(/[^\d+]/g, '')).filter((x) => x.replace(/\D/g, '').length >= 10);
+  const ok = (d) => /^55[1-9]\d(9\d{8}|[2-5]\d{7})$/.test(d);
+  for (const t of toks) { const d = t.replace(/\D/g, ''); if (t.startsWith('+') && ok(d.slice(0, d[4] === '9' ? 13 : 12))) return formatarTelefone(d.slice(0, d[4] === '9' ? 13 : 12)); }
+  for (const t of toks) { const d = t.replace(/\D/g, ''); if (ok(d)) return formatarTelefone(d); }
+  return '';
 }

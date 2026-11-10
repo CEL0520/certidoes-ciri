@@ -1,8 +1,8 @@
 // Leitura dos arquivos anexados: PDF (texto + imagens dos prints) e imagens soltas.
 // Tudo acontece no navegador, sem enviar nada para fora.
 import * as pdfjsLib from '../lib/pdfjs/pdf.min.mjs';
-import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.8.2';
-import * as N from './nucleo.js?v=0.8.2';
+import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.8.3';
+import * as N from './nucleo.js?v=0.8.3';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -219,8 +219,48 @@ function lerRegioes(canvas, regioes, fila, rotuloDe) {
       const canto = cantoDaBarra(canvas, r);
       if (canto) barra = { canvas: recorteAmpliado(canvas, canto, 3), r, amp: 3, dx: canto.x - r.x, dy: canto.y - r.y };
     }
+    // recorte do painel de contato (ou do terço direito do print), guardado para a leitura só de números
+    if (r.modo !== 'moldura' && !regioes.some((x) => x.painel === r)) {
+      const area = r.painel ? r : { x: r.x + Math.round(r.w * 0.62), y: r.y, w: Math.round(r.w * 0.38), h: r.h };
+      extra.recortePainel = recorteAmpliado(canvas, area, 2.5);
+    }
     fila.adicionar(recorteAmpliado(canvas, r), extra, barra);
   }
+}
+
+// Leitura só de dígitos no painel de contato: acha "+55 64 99222-1164" mesmo quando a leitura normal falha
+async function telefoneSoDigitos(recortes) {
+  for (const c of recortes) {
+    const texto = await comLeitor(async (w) => {
+      try {
+        await w.setParameters({ tessedit_pageseg_mode: '11', tessedit_char_whitelist: '+0123456789', thresholding_method: '2' });
+        const { data } = await w.recognize(c);
+        return data.text || '';
+      } finally {
+        await w.setParameters({ tessedit_pageseg_mode: '4', tessedit_char_whitelist: '', thresholding_method: '0' });
+      }
+    });
+    const tel = N.telefoneDeDigitos(texto);
+    if (tel) return tel;
+  }
+  return '';
+}
+async function completarTelefones(res, telas) {
+  for (const r of res) {
+    if (r.f.telefone || r.msgs.buscaSemResultado) continue;
+    const recortes = [];
+    for (const t of r.telas) {
+      if (t.recortePainel) recortes.push(t.recortePainel);
+      for (const p of t.paineisRecorte || []) recortes.push(p);
+    }
+    const tel = await telefoneSoDigitos(recortes);
+    if (tel) {
+      r.f.telefone = tel;
+      r.f.avisos = r.f.avisos.filter((a) => !/telefone não aparece/.test(a));
+      r.f.avisos.push(`Telefone lido do painel do contato: ${tel}. Confira.`);
+    }
+  }
+  void telas;
 }
 
 // Analisa um arquivo e devolve uma lista: um resultado por número de telefone (ou o e-mail)
@@ -275,10 +315,11 @@ export async function analisarArquivo(arquivo, aviso, temOcr) {
       return [semOcr({ tipo: 'conversa', meta, f, msgs: [], arquivo: nome }, temOcr, meta)];
     }
     const res = N.analisarTelas(telas, meta);
+    if (temOcr) await completarTelefones(res, telas);
     const livre = telas.some((t) => t.modo === 'livre' && t.linhas.length && !telasTexto.includes(t));
     return res.map((r, i) => {
       if (livre) r.f.avisos.push('Este print não segue o modelo da CIRI: confira com atenção as datas e horas, que costumam ser pequenas na tela.');
-      return semOcr({ tipo: 'conversa', meta, f: r.f, msgs: r.msgs, arquivo: res.length > 1 ? `${nome} · ${r.f.telefone || 'número ' + (i + 1)}` : nome }, temOcr, meta);
+      return semOcr({ tipo: 'conversa', meta, f: r.f, msgs: r.msgs, painel: r.telas.flatMap((t) => (t.painel || []).map((l) => l.texto)), arquivo: res.length > 1 ? `${nome} · ${r.f.telefone || 'número ' + (i + 1)}` : nome }, temOcr, meta);
     });
   }
 
@@ -293,7 +334,9 @@ export async function analisarArquivo(arquivo, aviso, temOcr) {
     lerRegioes(canvas, regioesDoCanvas(canvas, null), fila, null);
     const telas = N.juntarPaineis(await fila.todas());
     const meta = { ano: new Date().getFullYear(), nomeArquivo: doArquivo.nome, ato: doArquivo.ato, status: doArquivo.status, audiencia: doArquivo.audiencia };
-    return N.analisarTelas(telas, meta).map((r, i, todos) => {
+    const resImg = N.analisarTelas(telas, meta);
+    await completarTelefones(resImg, telas);
+    return resImg.map((r, i, todos) => {
       r.f.avisos.push('Confira com atenção as datas e horas: em imagens elas costumam ser pequenas.');
       return { tipo: 'conversa', meta, f: r.f, msgs: r.msgs, arquivo: todos.length > 1 ? `${nome} · ${r.f.telefone || 'número ' + (i + 1)}` : nome };
     });

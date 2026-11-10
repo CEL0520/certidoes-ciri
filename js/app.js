@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.8.2';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.2';
+import * as N from './nucleo.js?v=0.8.3';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.3';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -153,7 +153,8 @@ function preencher(fo, usadas) {
   $('textoLido').textContent = usadas.map((u) => {
     const cab = `=== ${u.arquivo || ''} · ${u.f.telefone || u.f.email || 'sem telefone'} · ${N.SITUACOES[u.f.situacao] || ''}`;
     const linhas = (u.msgs || []).map((m) => `${m.lado === 'parte' ? 'PARTE   ' : 'SERVIDOR'} ${m.tempo ? (N.fmtData(m.tempo) || '??/??') + ' ' + N.fmtHora(m.tempo) : '-- sem hora --'} | ${m.texto}`);
-    return [cab, ...linhas].join('\n');
+    const painel = (u.painel || []).length ? ['--- painel do contato ---', ...u.painel] : [];
+    return [cab, ...linhas, ...painel].join('\n');
   }).join('\n\n');
   const ul = $('evidencias');
   ul.innerHTML = '';
@@ -554,7 +555,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.8.2', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.8.3', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
