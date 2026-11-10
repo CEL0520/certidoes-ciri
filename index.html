@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certidões CIRI</title>
+<link rel="stylesheet" href="estilo.css?v=0.7">
+<link rel="icon" href="icones/32.png">
+</head>
+<body>
+<header class="topo">
+  <div>
+    <h1>Certidões CIRI</h1>
+    <p class="sub">Gerador de certidões de citação e intimação · tudo é processado neste computador</p>
+  </div>
+  <span id="statusOcr" class="selo">Verificando OCR…</span>
+</header>
+
+<main id="principal">
+  <aside id="visor" class="visor" hidden>
+    <div class="visor-barra">
+      <div id="visorAbas" class="visor-abas"></div>
+      <div class="botoes">
+        <button class="mini" id="zoomMenos" title="Diminuir">−</button>
+        <span id="zoomValor" class="zoom-valor">100%</span>
+        <button class="mini" id="zoomMais" title="Aumentar">+</button>
+        <button class="mini" id="visorFechar" title="Esconder o print">Esconder</button>
+      </div>
+    </div>
+    <div id="visorConteudo" class="visor-conteudo"></div>
+  </aside>
+  <button id="visorMostrar" class="visor-mostrar" hidden>Mostrar o print</button>
+
+  <div class="coluna">
+  <section class="painel" id="secFonte">
+    <h2><span class="num">1</span> Print da conversa ou do e-mail</h2>
+    <label id="zona" class="zona" tabindex="0">
+      <input type="file" id="arquivos" accept=".pdf,image/*" multiple hidden>
+      <strong>Arraste aqui os prints</strong> (PDF ou imagem, de qualquer sistema de chat ou e-mail) ou clique para escolher
+      <small>Vários arquivos da mesma parte (outros números ou e-mail) são reunidos numa só certidão quando todos forem frustrados.</small>
+    </label>
+    <p id="progresso" class="progresso" hidden></p>
+    <ul id="fontes" class="fontes"></ul>
+    <details id="secLeitor" class="leitor">
+      <summary>Ler a conversa direto do chat ou do e-mail, sem print</summary>
+      <ol>
+        <li>Mostre a barra de favoritos (<b>Ctrl+Shift+B</b>).</li>
+        <li>Arraste este botão para a barra: <a id="botaoLeitor" class="botao-leitor" href="#">📋 Ler conversa</a></li>
+        <li>Abra a conversa com a parte (painel do chat, WhatsApp Web ou e-mail) e clique em <b>Ler conversa</b> na barra de favoritos.</li>
+        <li>O gerador abre numa aba ao lado, já com a certidão.</li>
+      </ol>
+      <small>A leitura acontece no seu navegador: a conversa passa de uma aba para a outra, sem ir para a internet.</small>
+    </details>
+  </section>
+
+  <section class="painel" id="secDados" hidden>
+    <h2><span class="num">3</span> Confira os dados</h2>
+    <div id="avisos" class="avisos"></div>
+    <div class="grade">
+      <label class="largo">Situação
+        <select id="situacao"></select>
+      </label>
+      <label>Ato
+        <select id="tipo"><option value="intimacao">Intimação</option><option value="citacao">Citação</option></select>
+      </label>
+      <label>Qualificação da parte
+        <select id="qualificacao"></select>
+      </label>
+      <label>Gênero
+        <select id="genero"><option value="auto">Automático (pelo nome)</option><option value="m">Masculino (o qual)</option><option value="f">Feminino (a qual)</option></select>
+      </label>
+      <label class="largo">Nome da parte <small>(um por linha: gera uma certidão para cada)</small>
+        <textarea id="nomes" rows="2"></textarea>
+      </label>
+
+      <label data-canal="whatsapp">Telefone<input id="telefone"></label>
+      <label data-canal="whatsapp" class="check"><input type="checkbox" id="numeroComum"> Número comum a mais de uma parte</label>
+      <label data-canal="whatsapp" data-comum class="largo">Texto do número comum<input id="textoComum" value="número comum a ambas as partes"></label>
+      <label data-canal="email">E-mail da parte<input id="email"></label>
+
+      <label data-sit="-FRUST_SEM_RESPOSTA">Data<input id="data" placeholder="dd/mm/aaaa"></label>
+      <label data-sit="-FRUST_SEM_RESPOSTA">Hora<input id="hora" placeholder="13h29"></label>
+      <label data-sit="FRUST_SEM_RESPOSTA" class="largo">Tentativas <small>(uma por linha: dd/mm/aaaa 13h29)</small>
+        <textarea id="tentativas" rows="2"></textarea>
+      </label>
+
+      <label data-sit="INT_EXPRESSA INT_TACITA INT_SEM_MANIF">Tipo do ato
+        <select id="tipoAto">
+          <option value="ato ordinatório">Ato ordinatório</option><option value="decisão">Decisão</option>
+          <option value="despacho">Despacho</option><option value="sentença">Sentença</option>
+          <option value="acórdão">Acórdão</option><option value="">Outro (genérico)</option>
+        </select>
+      </label>
+      <label data-sit="INT_EXPRESSA INT_TACITA INT_SEM_MANIF">Evento<input id="evento" inputmode="numeric"></label>
+      <label data-sit="INT_EXPRESSA INT_TACITA INT_SEM_MANIF" class="largo">Outros arquivos enviados <small>(ex.: a contestação apresentada no evento 53; separe com ponto e vírgula)</small><input id="extras"></label>
+      <label data-sit="INT_EXPRESSA INT_TACITA INT_SEM_MANIF">Identidade confirmada antes, em<input id="identidadeData" placeholder="dd/mm/aaaa (opcional)"></label>
+      <label data-sit="INT_EXPRESSA INT_TACITA INT_SEM_MANIF">… às<input id="identidadeHora" placeholder="18h37"></label>
+
+      <label data-sit="INT_EXPRESSA" class="largo">Frase de ciência<input id="frase"></label>
+      <label data-sit="INT_TACITA" class="largo">Ciência tácita: inclusive…<input id="tacita"></label>
+
+      <label data-sit="CIT_EFETIVADA">Identificação por
+        <select id="docTipo"><option value="documento">Foto do documento</option><option value="cpf">Completou o CPF</option></select>
+      </label>
+      <label data-sit="CIT_EXPEDIDA_AUD">Data da audiência<input id="audData"></label>
+      <label data-sit="CIT_EXPEDIDA_AUD">Hora da audiência<input id="audHora"></label>
+      <label data-sit="CIT_EXPEDIDA_AUD" class="check"><input type="checkbox" id="audLink"> Recebeu o link de acesso</label>
+
+      <label data-sit="INT_SEM_MANIF FRUST_SEM_RESPOSTA EMAIL_FRUSTRADA">Encerramento em<input id="encData" placeholder="dd/mm/aaaa"></label>
+      <label data-sit="INT_SEM_MANIF FRUST_SEM_RESPOSTA EMAIL_FRUSTRADA">… às<input id="encHora" placeholder="16h56"></label>
+
+      <label data-sit="EMAIL_EFETIVADA" class="largo">Documentos remetidos<input id="emailDocs"></label>
+      <label data-sit="EMAIL_EFETIVADA">Recebimento acusado em<input id="confData"></label>
+      <label data-sit="EMAIL_EFETIVADA">… às<input id="confHora"></label>
+      <label data-sit="EMAIL_EFETIVADA">Por outro endereço<input id="confEmail" placeholder="(opcional)"></label>
+      <label data-sit="EMAIL_EFETIVADA">Por meio de<input id="confPor" placeholder="ex.: sua assessora Fulana (opcional)"></label>
+    </div>
+    <details class="evid">
+      <summary>O que a análise encontrou na conversa</summary>
+      <ul id="evidencias"></ul>
+    </details>
+  </section>
+
+  <section class="painel" id="secCertidao" hidden>
+    <h2><span class="num">2</span> Certidão</h2>
+    <p class="dica">Confira com o print ao lado. Você pode ajustar o texto direto na caixa; se mudar algum dado abaixo, o texto é refeito.</p>
+    <div id="certidoes"></div>
+  </section>
+  </div>
+</main>
+
+<footer class="rodape">Versão 0.7 · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.7"></script>
+</body>
+</html>
