@@ -1,8 +1,8 @@
 // Leitura dos arquivos anexados: PDF (texto + imagens dos prints) e imagens soltas.
 // Tudo acontece no navegador, sem enviar nada para fora.
 import * as pdfjsLib from '../lib/pdfjs/pdf.min.mjs';
-import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.8';
-import * as N from './nucleo.js?v=0.8';
+import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.8.2';
+import * as N from './nucleo.js?v=0.8.2';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
@@ -86,19 +86,24 @@ const paraLinhas = (data) => {
 };
 async function ocrCanvas(canvas, psm = '4') {
   return comLeitor(async (w) => {
-    if (psm !== '4') await w.setParameters({ tessedit_pageseg_mode: psm });
-    try {
+    const ler = async (modo, sauvola) => {
+      await w.setParameters({ tessedit_pageseg_mode: modo, thresholding_method: sauvola ? '2' : '0' });
       const { data } = await w.recognize(canvas, {}, { text: true, blocks: true });
-      let linhas = paraLinhas(data);
-      // letra miúda: a leitura por blocos perde os carimbos de hora; segunda leitura esparsa só para eles
+      return paraLinhas(data);
+    };
+    try {
+      // tela escura (invertida): limiar adaptativo (Sauvola), que não perde o texto cinza miúdo
+      let linhas = await ler(psm, !!canvas.escuro);
+      // letra miúda: sem nenhum carimbo de hora lido, tenta de novo com o limiar adaptativo
+      // e, se ainda faltar, uma leitura "esparsa" só para aproveitar os carimbos
       if (psm === '4' && N.precisaSegundaLeitura(linhas)) {
-        await w.setParameters({ tessedit_pageseg_mode: '11' });
-        const r2 = await w.recognize(canvas, {}, { text: true, blocks: true });
-        linhas = N.juntarCarimbos(linhas, paraLinhas(r2.data));
+        const l2 = canvas.escuro ? [] : await ler('4', true);
+        if (l2.length && !N.precisaSegundaLeitura(l2)) linhas = l2;
+        else linhas = N.juntarCarimbos(linhas, await ler('11', true));
       }
       return linhas;
     } finally {
-      await w.setParameters({ tessedit_pageseg_mode: '4' });
+      await w.setParameters({ tessedit_pageseg_mode: '4', thresholding_method: '0' });
     }
   });
 }
@@ -120,7 +125,8 @@ function recorteAmpliado(origem, r, ampliacao = AMPLIACAO) {
   c.width = Math.round(r.w * ampliacao); c.height = Math.round(r.h * ampliacao);
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  ctx.filter = luminanciaMedia(origem, r) < 110 ? 'grayscale(1) invert(1)' : 'grayscale(1)';
+  c.escuro = luminanciaMedia(origem, r) < 110;
+  ctx.filter = c.escuro ? 'grayscale(1) invert(1)' : 'grayscale(1)';
   ctx.drawImage(origem, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
   return c;
 }

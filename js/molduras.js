@@ -86,8 +86,13 @@ export function acharMolduras(img, fracaoConversa = 0.695) {
 // Devolve o x (em pixels da página) ou null.
 export function acharDivisoria(img, r) {
   const { data, width: W } = img;
-  const lum = (i) => (data[i] * 3 + data[i + 1] * 6 + data[i + 2]) / 10;
+  const lum0 = (i) => (data[i] * 3 + data[i + 1] * 6 + data[i + 2]) / 10;
   const y0 = r.y + Math.round(r.h * 0.12), y1 = r.y + Math.round(r.h * 0.88);
+  // modo escuro: inverte a luminância, para a divisória (mais clara que o fundo) virar "mais escura"
+  let soma = 0, n0 = 0;
+  for (let y = y0; y < y1; y += 17) for (let x = r.x; x < r.x + r.w; x += 17) { soma += lum0((y * W + x) * 4); n0++; }
+  const escuro = n0 && soma / n0 < 110;
+  const lum = escuro ? (i) => 255 - lum0(i) : lum0;
   let melhor = null, best = 0, melhorF = null, bestF = 0;
   for (let x = r.x + Math.round(r.w * 0.55); x < r.x + Math.round(r.w * 0.93); x++) {
     let c = 0, n = 0, claro = 0;

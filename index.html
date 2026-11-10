@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Certidões CIRI</title>
-<link rel="stylesheet" href="estilo.css?v=0.8">
+<link rel="stylesheet" href="estilo.css?v=0.8.2">
 <link rel="icon" href="icones/32.png">
 </head>
 <body>
@@ -121,6 +121,12 @@
       <summary>O que a análise encontrou na conversa</summary>
       <ul id="evidencias"></ul>
     </details>
+    <details class="evid" id="diagnostico">
+      <summary>Texto lido do print (para diagnóstico)</summary>
+      <p class="dica" style="margin:8px 0">Se algo sair errado, clique em <b>Copiar</b> e envie este texto junto com o print: mostra exatamente o que a ferramenta leu.</p>
+      <button class="sec mini" id="copiarDiag">Copiar</button>
+      <pre id="textoLido" class="texto-lido"></pre>
+    </details>
   </section>
 
   <section class="painel" id="secCertidao" hidden>
@@ -135,13 +141,13 @@
         <label class="mini-sel">Qualificação <select id="qualificacao"></select></label>
       </div>
     </div>
-    <p class="dica">Confira com o print ao lado. Você pode ajustar o texto direto na caixa; se mudar algum dado abaixo, o texto é refeito.</p>
+    <p class="dica">Confira com o print ao lado. Você pode ajustar o texto direto na caixa; se mudar algum dado abaixo, o texto é refeito. <b>Copiar com formatação</b> leva o texto em Arial 16, justificado, com negrito e itálico, sem cor (fica na cor do Projudi).</p>
     <div id="certidoes"></div>
   </section>
   </div>
 </main>
 
-<footer class="rodape">Versão 0.8 · os prints são lidos neste computador e não são guardados nem enviados.</footer>
-<script type="module" src="js/app.js?v=0.8"></script>
+<footer class="rodape">Versão 0.8.2 · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.8.2"></script>
 </body>
 </html>

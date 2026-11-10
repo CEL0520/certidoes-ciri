@@ -1,8 +1,8 @@
-import * as N from './nucleo.js?v=0.8';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8';
+import * as N from './nucleo.js?v=0.8.2';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.2';
 
 const $ = (id) => document.getElementById(id);
-const estado = {
+const estado = window.__ciri = {
   fontes: [], temOcr: false, visivel: 0, zoom: 1, visorAberto: true, recebidos: new Set(),
   adicionando: false, atoConfirmado: false, contatos: [],
 };
@@ -149,6 +149,12 @@ function preencher(fo, usadas) {
   $('avisos').innerHTML = '';
   const avisos = [...new Set(usadas.flatMap((u) => u.f.avisos || []))];
   for (const a of avisos) { const pp = document.createElement('p'); pp.textContent = a; $('avisos').appendChild(pp); }
+  // Diagnóstico: o que foi lido de cada conversa (sem nada além do próprio print)
+  $('textoLido').textContent = usadas.map((u) => {
+    const cab = `=== ${u.arquivo || ''} · ${u.f.telefone || u.f.email || 'sem telefone'} · ${N.SITUACOES[u.f.situacao] || ''}`;
+    const linhas = (u.msgs || []).map((m) => `${m.lado === 'parte' ? 'PARTE   ' : 'SERVIDOR'} ${m.tempo ? (N.fmtData(m.tempo) || '??/??') + ' ' + N.fmtHora(m.tempo) : '-- sem hora --'} | ${m.texto}`);
+    return [cab, ...linhas].join('\n');
+  }).join('\n\n');
   const ul = $('evidencias');
   ul.innerHTML = '';
   for (const u of usadas) for (const ev of u.f.evidencias || []) {
@@ -186,6 +192,9 @@ function desenharContatos() {
       if (estado.contatos.length === 1) $('situacao').value = k.situacao;
       gerar();
     };
+    if (k.canal !== 'email') aplicarMascara(num, mascaraTelefone);
+    aplicarMascara(data, mascaraData);
+    aplicarMascara(hora, mascaraHora);
     for (const el of [num, data, hora]) el.addEventListener('input', atualizar);
     sit.addEventListener('change', atualizar);
     linha.append(num, data, hora, sit);
@@ -251,7 +260,7 @@ function ajustarCampos() {
     el.hidden = negado ? dentro : !dentro;
   });
   document.querySelectorAll('[data-canal]').forEach((el) => { el.hidden = el.dataset.canal !== canal; });
-  document.querySelectorAll('[data-nao-frust]').forEach((el) => { if (frust) el.hidden = true; });
+  document.querySelectorAll('[data-nao-frust]').forEach((el) => { if (frust) el.hidden = true; else if (!el.dataset.canal) el.hidden = false; });
   document.querySelectorAll('[data-frust]').forEach((el) => { el.hidden = !frust; });
   document.querySelectorAll('[data-comum]').forEach((el) => { el.hidden = canal !== 'whatsapp' || !$('numeroComum').checked; });
   $('situacao').closest('label').hidden = frust && estado.contatos.length > 1;
@@ -287,9 +296,29 @@ function gerar() {
   }
 }
 
+// HTML limpo para colar no Projudi: Arial 16, justificado, só negrito e itálico.
+// Sem cor nem fundo: o texto assume a cor do editor onde é colado.
+const FONTE_COLAR = 'font-family: Arial, Helvetica, sans-serif; font-size: 16pt; text-align: justify;';
+function htmlLimpo(el) {
+  const fora = (n) => {
+    if (n.nodeType === 3) return n.textContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (n.nodeType !== 1) return '';
+    const dentro = [...n.childNodes].map(fora).join('');
+    const tag = n.tagName.toLowerCase();
+    if (tag === 'b' || tag === 'strong') return `<b>${dentro}</b>`;
+    if (tag === 'i' || tag === 'em') return `<i>${dentro}</i>`;
+    if (tag === 'br') return '<br>';
+    if (tag === 'div' || tag === 'p') return `<br>${dentro}`; // quebras feitas ao editar na caixa
+    return dentro;
+  };
+  const corpo = [...el.childNodes].map(fora).join('').replace(/^(<br>)+/, '');
+  return `<p style="${FONTE_COLAR}"><span style="font-family: Arial, Helvetica, sans-serif; font-size: 16pt;">${corpo}</span></p>`;
+}
+
 async function copiar(el, comFormato, botao) {
-  const html = `<p style="text-align:justify">${el.innerHTML}</p>`;
+  const html = htmlLimpo(el);
   const texto = el.innerText;
+  let ok = false;
   try {
     if (comFormato && window.ClipboardItem) {
       await navigator.clipboard.write([new ClipboardItem({
@@ -299,19 +328,58 @@ async function copiar(el, comFormato, botao) {
     } else {
       await navigator.clipboard.writeText(texto);
     }
-  } catch {
-    // Alternativa para navegadores sem acesso à área de transferência
-    const sel = window.getSelection();
-    const r = document.createRange();
-    r.selectNodeContents(el);
-    sel.removeAllRanges(); sel.addRange(r);
+    ok = true;
+  } catch { /* segue para a alternativa */ }
+  if (!ok) {
+    // Alternativa (navegadores sem acesso à área de transferência): o mesmo conteúdo, pelo evento de cópia
+    const naCopia = (e) => {
+      e.preventDefault();
+      if (comFormato) e.clipboardData.setData('text/html', html);
+      e.clipboardData.setData('text/plain', texto);
+    };
+    document.addEventListener('copy', naCopia, { once: true });
     document.execCommand('copy');
-    sel.removeAllRanges();
   }
   const antes = botao.textContent;
   botao.textContent = 'Copiado!';
   setTimeout(() => { botao.textContent = antes; }, 1400);
 }
+
+$('copiarDiag').onclick = (e) => copiar($('textoLido'), false, e.target);
+
+// ---------- Formato automático ao digitar: telefone, data e hora ----------
+const so = (v) => v.replace(/\D/g, '');
+export function mascaraTelefone(v) {
+  let d = so(v);
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2); // sem o +55
+  d = d.slice(0, 11);
+  if (d.length <= 2) return d.length ? `(${d}` : '';
+  const ddd = d.slice(0, 2), n = d.slice(2);
+  if (n.length <= 4) return `(${ddd}) ${n}`;
+  const corte = n.length === 9 ? 5 : 4; // celular (9 dígitos) ou fixo (8)
+  return `(${ddd}) ${n.slice(0, corte)}-${n.slice(corte)}`;
+}
+export function mascaraData(v) {
+  const d = so(v).slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+export function mascaraHora(v) {
+  const d = so(v).slice(0, 4);
+  if (d.length <= 2) return d;
+  return `${d.slice(0, 2)}h${d.slice(2)}`;
+}
+function aplicarMascara(el, f) {
+  el.addEventListener('input', (e) => {
+    if (e.inputType && e.inputType.startsWith('delete')) return; // deixa apagar livremente
+    const novo = f(el.value);
+    if (novo !== el.value) { el.value = novo; el.setSelectionRange(novo.length, novo.length); }
+  }, true); // antes de regerar a certidão
+}
+aplicarMascara($('telefone'), mascaraTelefone);
+for (const id of ['data', 'encData', 'identidadeData', 'audData', 'confData']) aplicarMascara($(id), mascaraData);
+for (const id of ['hora', 'encHora', 'identidadeHora', 'audHora', 'confHora']) aplicarMascara($(id), mascaraHora);
 
 // ---------- Visor do print ----------
 let desenhando = 0;
@@ -486,7 +554,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.8', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.8.2', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }

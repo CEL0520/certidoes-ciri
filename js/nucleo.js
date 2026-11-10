@@ -10,14 +10,17 @@ const MESES_PT_EXT = { janeiro: 1, fevereiro: 2, 'março': 3, marco: 3, abril: 4
 
 const pad = (n) => String(n).padStart(2, '0');
 export const fmtData = (t) => (t && t.dia ? `${pad(t.dia)}/${pad(t.mes)}/${t.ano}` : '');
-export const fmtHora = (t) => (t ? `${pad(t.hora)}h${pad(t.min)}` : '');
-const chaveTempo = (t) => (t ? t.ano * 1e8 + t.mes * 1e6 + t.dia * 1e4 + t.hora * 100 + t.min : 0);
+export const fmtHora = (t) => (t && Number.isFinite(t.hora) ? `${pad(t.hora)}h${pad(t.min)}` : '');
+const chaveTempo = (t) => (t ? t.ano * 1e8 + t.mes * 1e6 + t.dia * 1e4 + (t.hora || 0) * 100 + (t.min || 0) : 0);
 
 // Reconhece uma linha que é só o carimbo de data/hora de uma mensagem.
 // dataRef = { dia, mes, ano } usada quando o carimbo traz só a hora ("06:39").
 export function lerCarimbo(texto, ano, dataRef) {
-  const t = texto.replace(/[«»|✓✔︎]/g, ' ').replace(/\s+/g, ' ').trim();
+  let t = texto.replace(/[«»|✓✔︎]/g, ' ').replace(/\s+/g, ' ').trim();
   if (t.length > 34) return null;
+  // Confusões comuns da leitura em letra miúda: "Now 3, T33PM" -> "Nov 3, 1:33 PM"
+  t = t.replace(/\b(No[wy]|N0v|Nev)\b/gi, 'Nov').replace(/\b(0ct|Oet|Qct)\b/gi, 'Oct')
+    .replace(/([,\s])[£€§]\s?(\d{2})\s*([AP])/g, '$11:$2 $3').replace(/(^|[\d\s,])[TlI!](?=\d)/g, '$11').replace(/(\d)[Oo](?=\d|\s?[AP]M)/g, '$10').replace(/([\s,])[Oo](?=\d)/g, '$10');
   let m = t.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*(\d{1,2})\s*[,.]?\s*(\d{1,2})\s*[:.;]?\s*(\d{2})\s*([AP])\.?\s*M\b/i);
   if (m) {
     let h = +m[3];
@@ -27,6 +30,9 @@ export function lerCarimbo(texto, ano, dataRef) {
     if (m[5].toUpperCase() === 'A' && h === 12) h = 0;
     return { dia: +m[2], mes: MESES_EN[m[1].toLowerCase().slice(0, 3)], ano, hora: h, min };
   }
+  // Dia legível, hora ilegível ("Nov 3, 55 PM"): fica o dia; a hora vai para preencher
+  m = t.match(/^\W{0,3}(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s*(\d{1,2})\s*[,.]\s*\S{1,5}\s*([AP])\.?\s*M\b.{0,4}$/i);
+  if (m && +m[2] >= 1 && +m[2] <= 31) return { dia: +m[2], mes: MESES_EN[m[1].toLowerCase().slice(0, 3)], ano, hora: NaN, min: NaN, semHora: true };
   m = t.match(/\b(\d{1,2})\s+de\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç.]*,?\s*(?:de\s+(\d{4}),?\s*)?(?:[àa]s\s*)?(\d{1,2})[:h](\d{2})/i);
   if (m) return { dia: +m[1], mes: MESES_PT[m[2].toLowerCase()], ano: m[3] ? +m[3] : ano, hora: +m[4], min: +m[5] };
   m = t.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?,?\s*(?:[àa]s\s*)?(\d{1,2})[:h](\d{2})\b/);
@@ -70,7 +76,7 @@ function lerSeloData(texto, hoje) {
 // ---------------------------------------------------------------------------
 // Padrões das mensagens
 // ---------------------------------------------------------------------------
-const RE_SISTEMA = /atribuiu a si mesm|conversa visualizada|mensagem n[aã]o lida|conversa (resolvida|reaberta|marcada)|criado \d+ days|transcri[cç][aã]o autom|^mensagem de [aá]udio$|^\(?\d+\/\d+\)?$|^0?0:\d\d ?\/ ?0?0:\d\d|mensagens mais antigas|obter as mensagens|criptografia de ponta|encriptadas ponto|mensagens tempor[aá]rias|conversa expirada|esta conversa expirou|reenviar template|selecionar template|selecione um template|^mensagem apagada$|^falha ao enviar$|clique para saber mais|^hoje [eé] o dia/i;
+const RE_SISTEMA = /digite uma mensagem|\bdigit\b|visualizada por \d|\bversa visualizada|\batribu(iu|i)?\s*(a si|$)|ctr[li]\s*\+?\s*s\s*agendar|^\W{0,3}(?:[A-Za-z]{1,2}\s)?(a[cç][oõ]es da conversa|macros|informa[cç][aã]o da conversa|atributos do contato|notas do contato|anexos|conversas anteriores|participantes da conversa|etiquetas d[ae] (contato|conversa)|agente atribu|time atribu|prioridade|nenhuma macro)|atribuiu a si mesm|conversa visualizada|mensagem n[aã]o lida|conversa (resolvida|reaberta|marcada)|criado \d+ days|transcri[cç][aã]o autom|^mensagem de [aá]udio$|^\(?\d+\/\d+\)?$|^0?0:\d\d ?\/ ?0?0:\d\d|mensagens mais antigas|obter as mensagens|criptografia de ponta|encriptadas ponto|mensagens tempor[aá]rias|conversa expirada|esta conversa expirou|reenviar template|selecionar template|selecione um template|^mensagem apagada$|^falha ao enviar$|clique para saber mais|^hoje [eé] o dia/i;
 // Saudação / primeira abordagem do servidor, reconhecida pelo sentido (cada colaborador escreve de um jeito)
 const RE_SAUDACAO = /falo com|falar com|confirmar se (neste|nesse|este|esse)|(neste|nesse) (telefone|n[uú]mero|contato|whats)|dar continuidade ao seu atendimento|template\s*:|meu nome [eé] .{2,60}(tribunal|trabalho|central|n[uú]mero|telefone)|estou entrando em contato|entrando em contato em nome|com quem (eu )?falo/i;
 // Respostas automáticas (contas comerciais, ausência)
@@ -182,6 +188,8 @@ export function telasParaMensagens(telas, ano, opcoes = {}) {
     for (const l of linhas) {
       const texto = (l.texto || '').replace(/\s+/g, ' ').trim();
       if (!texto || daBarra.has(l)) continue;
+      // faixa da barra de tarefas do Windows, no pé dos prints de tela inteira
+      if (tela.modo === 'livre' && tela.altura && l.y0 / tela.altura > 0.95 && !lerCarimbo(texto, ano, hojeTela)) continue;
       if (temPos && tela.altura && l.y1 / tela.altura < 0.05) { // cabeçalho da conversa (nome do contato)
         if (!titulo && l.x0 / tela.largura < 0.2 && /[a-zà-ú]{3}/i.test(texto)) titulo = texto.replace(/^[^A-Za-zÀ-ú]+/, '');
         continue;
@@ -192,7 +200,18 @@ export function telasParaMensagens(telas, ano, opcoes = {}) {
       if (selo) { dataAtual = selo; continue; }
       const ld = temPos ? lado(l) : null;
       if (ld === 'fora') continue; // painel lateral, barra de tarefas etc.
-      const carimbo = lerCarimbo(texto, ano, dataAtual || hojeTela);
+      let carimbo = lerCarimbo(texto, ano, dataAtual || hojeTela);
+      // Carimbo colado no fim da linha da mensagem ("... Rocha? Nov 4, 9:09 AM"): separa os dois
+      if (!carimbo) {
+        const cauda = (' ' + texto).match(/\s((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Now|Dec)[a-z]*\.?\s*\d{1,2}\s*[,.]?\s*\S{1,6}\s*\S{0,3}\s*[AP]\.?\s?M\b.{0,6})$/i);
+        if (cauda) {
+          const cab = (' ' + texto).slice(0, cauda.index).trim();
+          const lad0 = temPos ? ld : (ehServidor(cab) ? 'servidor' : null);
+          if (cab) { pendentes.push({ lado: lad0, texto: cab, novaBolha: false }); ladoAnterior = lad0; }
+          carimbo = lerCarimbo(cauda[1], ano, dataAtual || hojeTela);
+          if (!carimbo) { yAnterior = temPos ? l.y1 : null; continue; }
+        }
+      }
       // Hora depois do relógio da captura, no mesmo dia, é erro de leitura ("09:35" lido "19:35")
       if (carimbo && tela.barra && tela.barra.hora !== undefined && carimbo.dia === tela.barra.dia && carimbo.mes === tela.barra.mes
         && carimbo.hora * 60 + carimbo.min > tela.barra.hora * 60 + tela.barra.min && carimbo.hora >= 10
@@ -235,8 +254,24 @@ const digitos = (t) => (t || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/,
 
 // Procura o telefone dentro do que foi lido da tela: busca de nova conversa, painel do contato,
 // cabeçalho. Ignora identificadores (@lid) e números citados dentro de mensagens longas.
+// Confusões da leitura em números: "+5564 99222-1l64", "+556 4992 22116 4", "+55649922211б4"
+function consertarNumero(tx) {
+  return tx.replace(/\+[\dOoIl|SsBб\s-]{9,24}/g, (m) => {
+    // só pedaços que já têm algum dígito de verdade ("Osvaldo" não vira "05")
+    const pedacos = m.slice(1).split(/\s+/).filter((x) => /\d/.test(x))
+      .map((x) => x.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/[Ss]/g, '5').replace(/B/g, '8').replace(/б/g, '6').replace(/\D/g, ''));
+    let d = '';
+    for (const p of pedacos) {
+      if (d.length >= 12 && p.length === 1) break; // ícone lido como dígito no fim ("+5564992221164 0")
+      d += p;
+    }
+    if (!d.startsWith('55')) return m;
+    d = d.slice(0, 13);
+    return ' +' + d + ' ';
+  });
+}
 export function telefoneDaTela(tela) {
-  const textos = tela.linhas.concat(tela.painel || []).map((l) => (l.texto || '').trim());
+  const textos = tela.linhas.concat(tela.painel || []).map((l) => consertarNumero((l.texto || '').trim()));
   const tudo = textos.join(' ');
   const busca = tudo.match(/nenhum resultado[\s\S]{0,30}?para\s*["“”'‘’]?\s*([+\d()\s-]{8,24}\d)/i);
   if (busca) {
@@ -246,12 +281,12 @@ export function telefoneDaTela(tela) {
     return formatarTelefone(m ? m[1] + m[2] + m[3] : busca[1]);
   }
   for (const tx of textos) {
-    if (/@|3018-?6000/.test(tx)) continue;
+    if (/@lid|\S@\S+\.\w|3018-?6000/.test(tx)) continue;
     const m = tx.match(/\+\s?55\s?\(?(\d{2})\)?\s?(9?\d{4})[-\s]?(\d{4})(?!\d)/) || tx.match(/(?:^|\D)55(\d{2})(9?\d{4})(\d{4})(?!\d)/);
     if (m && (tx.length < 40 || /^\W{0,4}\+/.test(tx))) return formatarTelefone(m[1] + m[2] + m[3]);
   }
   for (const tx of textos) {
-    if (tx.length > 30 || /@|3018-?6000/.test(tx)) continue;
+    if (tx.length > 30 || /@lid|\S@\S+\.\w|3018-?6000/.test(tx)) continue;
     const m = tx.match(/\((\d{2})\)\s?(9?\d{4})-?(\d{4})(?!\d)/);
     if (m) return formatarTelefone(m[1] + m[2] + m[3]);
   }
@@ -540,6 +575,7 @@ export function analisarConversa(msgs, meta = {}) {
   if (f.tempoPrincipal && f.tempoPrincipal.hora !== undefined && (f.tempoPrincipal.hora < 6 || f.tempoPrincipal.hora > 21)) f.avisos.push(`A hora ${fmtHora(f.tempoPrincipal)} está fora do expediente: pode ser erro de leitura. Confira.`);
   if (!f.tempoPrincipal) f.avisos.push('Não encontrei a data e a hora no print. Preencha manualmente.');
   else if (!f.tempoPrincipal.dia) f.avisos.push('O print mostra só a hora, sem o dia. Preencha a data.');
+  else if (f.tempoPrincipal.semHora) f.avisos.push('Li o dia, mas a hora ficou ilegível no print. Preencha a hora.');
   return f;
 }
 
