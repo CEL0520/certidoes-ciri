@@ -418,9 +418,10 @@ export function analisarConversa(msgs, meta = {}) {
   const limiteAto = msgAto ? idx(msgAto) : arquivos[0] ? idx(arquivos[0]) : msgs.length;
   const preAto = msgs.slice(0, limiteAto).filter((m) => m.lado === 'servidor').map((m) => m.texto).join(' ');
   const pelaMsg = msgAto && (/\bcitad[oa]/i.test(msgAto.texto) ? 'citacao' : /\bintimad[oa]/i.test(msgAto.texto) ? 'intimacao' : '');
-  const peloTexto = /\bcitad[oa]|\bcita[cç][aã]o\b|ajuizad[oa][^.]{0,120}em seu desfavor/i.test(preAto) ? 'citacao' : /\bintima[cç][aã]o\b|\bintimad[oa]/i.test(preAto) ? 'intimacao' : '';
-  f.tipo = meta.ato || pelaMsg || peloTexto || 'intimacao';
-  f.atoIndicado = !!(meta.ato || pelaMsg || peloTexto);
+  const peloTexto = /\bcitad[oa]|\bcita[cç][aã]o\b|em seu desfavor/i.test(preAto) ? 'citacao' : /\bintima[cç][aã]o\b|\bintimad[oa]/i.test(preAto) ? 'intimacao' : '';
+  const peloStatus = meta.status === 'EXPEDIDA' ? 'citacao' : ''; // "expedida" só existe na citação
+  f.tipo = meta.ato || pelaMsg || peloTexto || peloStatus || 'intimacao';
+  f.atoIndicado = !!(meta.ato || pelaMsg || peloTexto || peloStatus);
   ev('Mensagem do ato', msgAto);
   if (arquivos[0]) ev('Envio de arquivos', arquivos[0]);
   f.horaAto = (msgAto && msgAto.tempo) || (arquivos[0] && arquivos[0].tempo) || null;
@@ -480,7 +481,21 @@ export function analisarConversa(msgs, meta = {}) {
   respostas.slice(0, 6).forEach((r) => ev('Resposta da parte', r));
 
   // Documentos de identidade (imagens enviadas pela parte, legendas do PDF) ou CPF
-  f.imagensParte = meta.imagensParte || respostas.filter((r) => /\[(imagem enviada|arquivo)\]/i.test(r.texto) || /<{5,}|\bI<BRA/.test(r.texto)).length;
+  // Imagem logo depois de "envie uma foto conforme orientação abaixo" é o exemplo (selfie com documento) enviado
+  // pelo próprio servidor, não a foto da parte
+  const exemploDoServidor = (r) => {
+    const i = pos(r);
+    for (let j = i - 1; j >= 0 && j >= i - 3; j--) {
+      const m = msgs[j];
+      if (m.lado === 'parte' && !/\[(imagem enviada|arquivo)\]/i.test(m.texto)) return false;
+      if (m.lado === 'servidor' && /orienta[cç][aã]o abaixo|conforme (o )?(exemplo|modelo|imagem)|selfie|segurando (o )?documento/i.test(m.texto)) {
+        return !m.tempo || !r.tempo || Math.abs(chaveTempo(r.tempo) - chaveTempo(m.tempo)) <= 2;
+      }
+    }
+    return false;
+  };
+  const fotosParte = respostas.filter((r) => (/\[(imagem enviada|arquivo)\]/i.test(r.texto) && !exemploDoServidor(r)) || /<{5,}|\bI<BRA/.test(r.texto));
+  f.imagensParte = meta.imagensParte || fotosParte.length;
   const pedidoCpf = serv(/\bCPF\b/)[0];
   // CPF em qualquer formato: 000.000.000-15, 000 000 000 15, 00000000000, "meu CPF é ...",
   // ou só os dígitos que faltavam no CPF mascarado ("019.96", "01996")
@@ -499,7 +514,7 @@ export function analisarConversa(msgs, meta = {}) {
   const cpfComoAlternativa = pedidoDoc && serv(/\bCPF\b/).some((m) => idx(m) > idx(pedidoDoc) && idx(m) < iArq);
   const respDoc = pedidoDoc && arquivos.length && !semDocumento && !cpfComoAlternativa && respostas.find((r) => pos(r) > idx(pedidoDoc) && pos(r) < iArq);
   // Foto e CPF podem vir os dois, em qualquer ordem (CPF antes e foto depois dos arquivos, ou foto com CPF ilegível)
-  const fotoMsg = respostas.find((r) => /\[(imagem enviada|arquivo)\]/i.test(r.texto) || /<{5,}|\bI<BRA/.test(r.texto));
+  const fotoMsg = fotosParte[0];
   const temFoto = f.imagensParte > 0 || !!respDoc;
   if (temFoto && cpf) {
     const fotoPrimeiro = fotoMsg ? pos(fotoMsg) < pos(cpf) : false; // no PDF a foto fica em página à parte: posição desconhecida
@@ -570,6 +585,10 @@ export function analisarConversa(msgs, meta = {}) {
       f.situacao = f.audiencia && f.audiencia.msg ? 'CIT_EXPEDIDA_AUD' : 'CIT_EXPEDIDA';
       f.tempoPrincipal = tempoAbordagem;
     }
+  } else if (!arquivos.length && !msgAto) {
+    // intimação: identificou-se, mas não comprovou e não recebeu os arquivos
+    f.situacao = 'FRUST_NAO_COMPROVOU';
+    f.tempoPrincipal = tempoAbordagem;
   } else {
     f.tempoPrincipal = tempoAbordagem || f.horaAto; // data e hora da abordagem (primeira mensagem à parte)
     if (!decisiva) f.avisos.push('Não encontrei a confirmação de identidade antes do envio dos arquivos. Confira no print.');
@@ -849,7 +868,7 @@ export function gerarCertidao(c0) {
     case 'INT_TACITA':
       return `Certifico que, ${dia(c.data, c.hora)}, através do aplicativo WhatsApp, em contato com o número ${tel}${comum}${anterior}, procedi à intimação ${qual} ${nome}, ${sujeito} ${recebimento}, prosseguiu interagindo na conversa${c.tacita ? `, inclusive ${c.tacita}` : ''}, o que demonstra, de forma tácita, a ciência inequívoca do ato, ${print}`;
     case 'INT_SEM_MANIF':
-      return `Certifico que, ${dia(c.data, c.hora)}, através do aplicativo WhatsApp, em contato com o número ${tel}${comum}${anterior}, procedi à intimação ${qual} ${nome}${c.identidadeData ? '' : `, ${oqual} confirmou sua identidade`}, tendo-lhe sido encaminhados ${listaEnviada}. Solicitada a confirmação do recebimento dos arquivos, não houve resposta, razão pela qual o atendimento foi encerrado em ${B(c.encData)}, às ${B(c.encHora)}, ${print}`;
+      return `Certifico que, ${dia(c.data, c.hora)}, através do aplicativo WhatsApp, em contato com o número ${tel}${comum}${anterior}, procedi à intimação ${qual} ${nome}${c.identidadeData ? '' : `, ${oqual} confirmou sua identidade`}, tendo-lhe sido encaminhados ${listaEnviada}. Solicitada a confirmação do recebimento dos arquivos, não houve resposta, ${print}`;
     case 'CIT_EFETIVADA': {
       const DOC = {
         cpf: 'completou o número de seu CPF',

@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.8.6';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.6';
+import * as N from './nucleo.js?v=0.8.7';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.7';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -228,10 +228,19 @@ $('escolhaAto').addEventListener('click', (e) => {
   $('tipo').value = b.dataset.v;
   if (b.dataset.v === 'citacao' && ladoDaQualificacao($('qualificacao').value) !== 'requerida') $('qualificacao').value = 'parte_requerida';
   estado.atoConfirmado = true;
-  // situação coerente com o ato
-  const sit = $('situacao').value;
-  if (b.dataset.v === 'citacao' && /^INT_/.test(sit)) $('situacao').value = 'CIT_EFETIVADA';
-  if (b.dataset.v === 'intimacao' && /^CIT_/.test(sit)) $('situacao').value = 'INT_SEM_MANIF';
+  // refaz a análise de cada conversa com o ato escolhido (citação: efetivada/expedida; intimação: ciência...)
+  const q = $('qualificacao').value;
+  for (const fo of estado.fontes) {
+    if (!fo.msgs || !fo.msgs.length || fo.f.canal === 'email') continue;
+    const antigo = fo.f;
+    const f = N.analisarConversa(fo.msgs, { ...(fo.meta || {}), telefone: antigo.telefone, ato: b.dataset.v });
+    f.nomes = antigo.nomes; f.nome = antigo.nome; f.pj = antigo.pj;
+    if (antigo.audiencia && !f.audiencia) f.audiencia = antigo.audiencia;
+    fo.f = f;
+  }
+  aposAnalise();
+  $('tipo').value = b.dataset.v;
+  if (ladoDaQualificacao(q) && (b.dataset.v !== 'citacao' || ladoDaQualificacao(q) === 'requerida')) $('qualificacao').value = q;
   desenharEscolha(); gerar();
 });
 $('escolhaParte').addEventListener('click', (e) => {
@@ -555,7 +564,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.8.6', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.8.7', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
