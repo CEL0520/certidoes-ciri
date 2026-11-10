@@ -498,7 +498,15 @@ export function analisarConversa(msgs, meta = {}) {
   const semDocumento = respostas.some((r) => pedidoDoc && pos(r) > idx(pedidoDoc) && pos(r) < iArq && /n[aã]o (tenho|estou com|consigo|possuo)|perdi|sem (o )?(rg|documento|identidade)|n[aã]o tenho (rg|documento)/i.test(r.texto));
   const cpfComoAlternativa = pedidoDoc && serv(/\bCPF\b/).some((m) => idx(m) > idx(pedidoDoc) && idx(m) < iArq);
   const respDoc = pedidoDoc && arquivos.length && !semDocumento && !cpfComoAlternativa && respostas.find((r) => pos(r) > idx(pedidoDoc) && pos(r) < iArq);
-  f.docTipo = f.imagensParte > 0 ? 'documento' : cpf ? 'cpf' : respDoc ? 'documento' : '';
+  // Foto e CPF podem vir os dois, em qualquer ordem (CPF antes e foto depois dos arquivos, ou foto com CPF ilegível)
+  const fotoMsg = respostas.find((r) => /\[(imagem enviada|arquivo)\]/i.test(r.texto) || /<{5,}|\bI<BRA/.test(r.texto));
+  const temFoto = f.imagensParte > 0 || !!respDoc;
+  if (temFoto && cpf) {
+    const fotoPrimeiro = fotoMsg ? pos(fotoMsg) < pos(cpf) : false; // no PDF a foto fica em página à parte: posição desconhecida
+    f.docTipo = fotoPrimeiro ? 'doc_cpf' : 'cpf_doc';
+  } else {
+    f.docTipo = temFoto ? 'documento' : cpf ? 'cpf' : '';
+  }
   if (!f.imagensParte && !cpf && respDoc) f.docInferido = true;
 
   // Identidade: só vale resposta que confirma ("sim", "sou eu", "falo sim"...), não um simples "bom dia"
@@ -843,7 +851,13 @@ export function gerarCertidao(c0) {
     case 'INT_SEM_MANIF':
       return `Certifico que, ${dia(c.data, c.hora)}, através do aplicativo WhatsApp, em contato com o número ${tel}${comum}${anterior}, procedi à intimação ${qual} ${nome}${c.identidadeData ? '' : `, ${oqual} confirmou sua identidade`}, tendo-lhe sido encaminhados ${listaEnviada}. Solicitada a confirmação do recebimento dos arquivos, não houve resposta, razão pela qual o atendimento foi encerrado em ${B(c.encData)}, às ${B(c.encHora)}, ${print}`;
     case 'CIT_EFETIVADA': {
-      const doc = c.docTipo === 'cpf' ? 'completou o número de seu CPF' : 'realizou o envio da imagem de seu documento de identificação';
+      const DOC = {
+        cpf: 'completou o número de seu CPF',
+        documento: 'realizou o envio da imagem de seu documento de identificação',
+        cpf_doc: 'completou o número de seu CPF, bem como realizou o envio da imagem de seu documento de identificação',
+        doc_cpf: 'realizou o envio da imagem de seu documento de identificação, bem como completou o número de seu CPF',
+      };
+      const doc = DOC[c.docTipo] || DOC.documento;
       const audE = c.audData ? `, bem como a intimação da audiência designada para ${B(c.audData)}, às ${B(c.audHora)}${c.audLink ? ' e o respectivo link de acesso' : ''}` : '';
       return `Certifico que, ${dia(c.data, c.hora)}, através do aplicativo WhatsApp, em contato com o número ${tel}${comum}, procedi à citação ${qual} ${nome}, ${oqual} confirmou sua identidade e ${doc}, tendo-lhe sido encaminhados o inteiro teor do ato e o respectivo código de acesso${audE}, operando-se a regular citação, ${print}`;
     }
@@ -964,7 +978,8 @@ export function lerMetaPdf(texto) {
   meta.ano = cap ? +cap[3] : new Date().getFullYear();
   if (cap) meta.dataCaptura = { dia: +cap[1], mes: +cap[2], ano: +cap[3] };
   const imgs = texto.match(/Imagem enviada por [^\n]*?(\d{1,2}):(\d{2})/g);
-  meta.imagensParte = imgs ? imgs.length : 0;
+  const docs = texto.match(/Documento enviado pela parte\s*:/gi); // arquivo (foto/PDF do documento) anexado pela extensão
+  meta.imagensParte = (imgs ? imgs.length : 0) + (docs ? docs.length : 0);
   meta.ehEmail = !rod && /<[^>\s]+@[^>\s]+>/.test(texto) && /\d{1,2} de [a-zç]+ de \d{4},? (?:[àa]s )?\d{1,2}:\d{2}/i.test(texto);
   return meta;
 }
