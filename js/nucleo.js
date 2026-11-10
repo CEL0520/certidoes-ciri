@@ -351,6 +351,7 @@ const RE_TERCEIRO = /^n[aã]o\b|\bn[aã]o\s*,?\s*(sou|[eé]\b|conhe[cç]|mora|te
 const RE_IDENTIDADE = /^(sim|ss+|sou|sou eu|eu|eu mesm[oa]|el[ea] mesm[oa]|[eé] (el[ea]|eu|sim|o pr[oó]prio|a pr[oó]pria|o mesmo|a mesma)|falando|positivo|correto|exato|isso|pois n[aã]o|confirmo|pode falar|fala|falo sim|perfeitamente|com certeza|certo)\b|\b(sou eu|sou (o|a) |eu mesm[oa]|falo sim|sim,? (sou|[eé]|falo)|[eé] (ele|ela) mesm[oa]|[eé] (o|a) pr[oó]pri[oa]|sim senhor|sim senhora)\b/i;
 const RE_CIENCIA = /\breceb(i|ido|emos)\b|\bciente\b|\bconfirmo\b|tomei ci[eê]ncia/i;
 const RE_CPF = /\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b|\b\d{5,}\b/;
+const RE_CPF_COMPLETO = /(?<!\d)\d{3}\s?[.\s-]?\s?\d{3}\s?[.\s-]?\s?\d{3}\s?[-.\s/]?\s?\d{2}(?!\d)/;
 const RE_PJ = /\b(ltda|s\/a|s\.a\.|eireli|epp|spe|condom[ií]nio|associa[cç][aã]o|cooperativa|com[eé]rcio|ind[uú]stria|servi[cç]os|banco|igreja|instituto|funda[cç][aã]o|madeireira|construtora|incorporadora|empreendimentos?|treinamento|transportes?|distribuidora|holding|me)\b/i;
 
 // Tira cumprimentos e pontuação de uma resposta curta: "Bom dia .não" -> "não"
@@ -448,6 +449,7 @@ export function analisarConversa(msgs, meta = {}) {
   const porAusencia = serv(/aus[eê]ncia de (manifesta|confirma|comunica)/)[0];
 
   // Respostas da parte: sem ruído de OCR, sem repetições, sem citações e sem respostas automáticas
+  const iPedidoCpf = msgs.findIndex((m) => m.lado === 'servidor' && /\bCPF\b/i.test(m.texto));
   const vistasResp = new Set();
   const automaticas = [];
   const respostas = [];
@@ -456,7 +458,9 @@ export function analisarConversa(msgs, meta = {}) {
     const texto = semCitacao(m.texto);
     const letras = (texto.match(/[A-Za-zÀ-ú]/g) || []).length;
     const marcador = /\[(imagem enviada|arquivo)\]/i.test(texto);
-    if (!marcador && (letras < 2 || !/[A-Za-zÀ-ú]{2,}/.test(texto) || letras / texto.replace(/\s/g, '').length < 0.5)) continue;
+    // Só números: vale como resposta quando vem depois do pedido de CPF (CPF completo ou só os dígitos que faltavam)
+    const soNumero = iPedidoCpf >= 0 && msgs.indexOf(m) > iPedidoCpf && (texto.match(/\d/g) || []).length >= 3 && texto.length < 60;
+    if (!marcador && !soNumero && (letras < 2 || !/[A-Za-zÀ-ú]{2,}/.test(texto) || letras / texto.replace(/\s/g, '').length < 0.5)) continue;
     const k = norm(texto).slice(0, 40);
     if (vistasResp.has(k)) continue;
     vistasResp.add(k);
@@ -478,9 +482,22 @@ export function analisarConversa(msgs, meta = {}) {
   // Documentos de identidade (imagens enviadas pela parte, legendas do PDF) ou CPF
   f.imagensParte = meta.imagensParte || respostas.filter((r) => /\[(imagem enviada|arquivo)\]/i.test(r.texto) || /<{5,}|\bI<BRA/.test(r.texto)).length;
   const pedidoCpf = serv(/\bCPF\b/)[0];
-  const cpf = pedidoCpf && respostas.find((r) => pos(r) > idx(pedidoCpf) && r.texto.length < 40 && RE_CPF.test(r.texto));
+  // CPF em qualquer formato: 000.000.000-15, 000 000 000 15, 00000000000, "meu CPF é ...",
+  // ou só os dígitos que faltavam no CPF mascarado ("019.96", "01996")
+  const cpf = pedidoCpf && respostas.find((r) => {
+    if (pos(r) <= idx(pedidoCpf) || pos(r) >= iArq) return false;
+    const t = r.texto;
+    if (RE_CPF_COMPLETO.test(t)) return true;
+    const dig = (t.match(/\d/g) || []).length;
+    const resto = t.replace(/[\d\s.\-/]/g, '').replace(/\b(meu|cpf|[eé]|o|n[uú]mero|s[aã]o|os|d[ií]gitos|faltam|que|segue|aqui)\b/gi, '').replace(/[^A-Za-zÀ-ú]/g, '');
+    return dig >= 3 && resto.length <= 3;
+  });
   const pedidoDoc = serv(/documento|foto|identidade|identifica[cç][aã]o/)[0];
-  const respDoc = pedidoDoc && arquivos.length && respostas.find((r) => pos(r) > idx(pedidoDoc) && pos(r) < iArq);
+  // Dedução de foto só quando o contexto não a desmente: a parte não disse que estava sem documento
+  // e o servidor não precisou pedir o CPF como alternativa depois
+  const semDocumento = respostas.some((r) => pedidoDoc && pos(r) > idx(pedidoDoc) && pos(r) < iArq && /n[aã]o (tenho|estou com|consigo|possuo)|perdi|sem (o )?(rg|documento|identidade)|n[aã]o tenho (rg|documento)/i.test(r.texto));
+  const cpfComoAlternativa = pedidoDoc && serv(/\bCPF\b/).some((m) => idx(m) > idx(pedidoDoc) && idx(m) < iArq);
+  const respDoc = pedidoDoc && arquivos.length && !semDocumento && !cpfComoAlternativa && respostas.find((r) => pos(r) > idx(pedidoDoc) && pos(r) < iArq);
   f.docTipo = f.imagensParte > 0 ? 'documento' : cpf ? 'cpf' : respDoc ? 'documento' : '';
   if (!f.imagensParte && !cpf && respDoc) f.docInferido = true;
 
@@ -536,7 +553,7 @@ export function analisarConversa(msgs, meta = {}) {
     f.tempoPrincipal = tempoAbordagem;
     f.avisos.push('A pessoa respondeu, mas não confirmou ser a parte (só cumprimentou ou perguntou do que se trata). Confira.');
   } else if (f.tipo === 'citacao') {
-    f.tempoPrincipal = f.horaAto || tempoAbordagem;
+    f.tempoPrincipal = tempoAbordagem || f.horaAto; // data e hora da abordagem (primeiro contato)
     if (f.docTipo || arquivos.length) {
       f.situacao = 'CIT_EFETIVADA';
       if (!f.docTipo) { f.docTipo = 'documento'; f.avisos.push('Arquivos enviados, mas não identifiquei o documento ou o CPF no print. Confira.'); }
@@ -546,7 +563,7 @@ export function analisarConversa(msgs, meta = {}) {
       f.tempoPrincipal = tempoAbordagem;
     }
   } else {
-    f.tempoPrincipal = f.horaAto || tempoAbordagem;
+    f.tempoPrincipal = tempoAbordagem || f.horaAto; // data e hora da abordagem (primeira mensagem à parte)
     if (!decisiva) f.avisos.push('Não encontrei a confirmação de identidade antes do envio dos arquivos. Confira no print.');
     const expressa = depois.find((r) => r.texto.length <= 100 && RE_CIENCIA.test(r.texto));
     if (expressa) {
@@ -563,7 +580,6 @@ export function analisarConversa(msgs, meta = {}) {
       f.situacao = 'INT_SEM_MANIF';
       if (!f.encerramento && porAusencia) f.encerramento = porAusencia.tempo;
     }
-    if (f.identidade && f.tempoPrincipal && fmtData(f.identidade) !== fmtData(f.tempoPrincipal)) f.identidadeAnterior = f.identidade;
   }
 
   if (msgs.some(falha409)) f.avisos.push('Há mensagens com falha 409 (sessão do WhatsApp desconectada). Foram desconsideradas como tentativa.');
