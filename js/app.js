@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.8.7';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.7';
+import * as N from './nucleo.js?v=0.8.8';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.8';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -141,7 +141,7 @@ function preencher(fo, usadas) {
   // Contatos da certidão frustrada: um por conversa (número ou e-mail)
   estado.contatos = usadas.map((u) => {
     const t = T(u.f.tempoPrincipal || (u.f.tentativas || [])[0]);
-    return { canal: u.f.canal, situacao: u.f.situacao, telefone: u.f.telefone || '', email: u.f.email || '', data: t.d, hora: t.h };
+    return { canal: u.f.canal, situacao: u.f.situacao, telefone: u.f.telefone || '', email: u.f.email || '', data: t.d, hora: t.h, papel: u.f.papelTerceiro || '' };
   });
   desenharContatos();
   desenharEscolha(f);
@@ -564,7 +564,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.8.7', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.8.8', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }

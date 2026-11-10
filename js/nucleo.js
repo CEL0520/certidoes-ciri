@@ -80,7 +80,7 @@ const RE_SISTEMA = /digite uma mensagem|\bdigit\b|visualizada por \d|\bversa vis
 // Saudação / primeira abordagem do servidor, reconhecida pelo sentido (cada colaborador escreve de um jeito)
 const RE_SAUDACAO = /falo com|falar com|confirmar se (neste|nesse|este|esse)|(neste|nesse) (telefone|n[uú]mero|contato|whats)|dar continuidade ao seu atendimento|template\s*:|meu nome [eé] .{2,60}(tribunal|trabalho|central|n[uú]mero|telefone)|estou entrando em contato|entrando em contato em nome|com quem (eu )?falo/i;
 // Respostas automáticas (contas comerciais, ausência)
-const RE_AUTOMATICA = /novo (n[uú]mero|contato)|este [eé] o (novo|nosso)|n[aã]o estamos dispon[ií]ve|no momento n[aã]o (estamos|podemos|posso)|hor[aá]rio de (atendimento|funcionamento)|mensagem autom[aá]tica|resposta autom[aá]tica|obrigad[oa] (por|pelo) (entrar em )?contato|agradecemos (o|seu|pelo) contato|em breve (retornaremos|responderemos|entraremos)|seja bem[- ]vind|retornaremos (o|seu) contato|fora do hor[aá]rio|aus[eê]ncia tempor|estou ausente|de f[eé]rias|atendimento (de segunda|das \d)/i;
+const RE_AUTOMATICA = /como podemos (te |lhe )?ajudar|novo (n[uú]mero|contato)|este [eé] o (novo|nosso)|n[aã]o estamos dispon[ií]ve|no momento n[aã]o (estamos|podemos|posso)|hor[aá]rio de (atendimento|funcionamento)|mensagem autom[aá]tica|resposta autom[aá]tica|obrigad[oa] (por|pelo) (entrar em )?contato|agradecemos (o|seu|pelo) contato|em breve (retornaremos|responderemos|entraremos)|seja bem[- ]vind|retornaremos (o|seu) contato|fora do hor[aá]rio|aus[eê]ncia tempor|estou ausente|de f[eé]rias|atendimento (de segunda|das \d)/i;
 const RE_COMPOSITOR_LONGO = /digite uma mensagem|digite sua mensagem|escreva uma mensagem|type a message|ctrl\s*\+\s*s agendar/i;
 const ehCompositor = (t) => RE_COMPOSITOR_LONGO.test(t) || (t.length <= 26 && /\bmensagem\b/i.test(t) && !/[aá]udio|imagem|texto|lida/i.test(t));
 const RE_SERVIDOR = [
@@ -348,6 +348,7 @@ function detectorDeLado(linhas, tela, ano) {
 // 2. Extrair os fatos e sugerir a situação
 // ---------------------------------------------------------------------------
 const RE_TERCEIRO = /^n[aã]o\b|\bn[aã]o\s*,?\s*(sou|[eé]\b|conhe[cç]|mora|tem ningu|trabalh|existe|sei quem)|n[uú]mero errado|engano|desconhe[cç]o|faleceu|ningu[eé]m com (esse|este) nome|(telefone|n[uú]mero|whats\w*)\s+[eé]\s+d[aeo]\s|[eé] d[ae] (empresa|loja|firma)|n[aã]o tenho (esse|este) nome/i;
+const RE_PAPEL = /\b(?:sou|aqui [eé]|falo como|quem fala [eé])\s+(?:o |a |seu |sua )?(advogad[oa]|esposa|marido|companheir[oa]|filh[oa]|irm[aã]o?|m[aã]e|pai|vizinh[oa]|sobrinh[oa]|net[oa]|prim[oa]|cunhad[oa]|genro|nora|amig[oa]|patr[aã]o|patroa|secret[aá]ri[oa]|funcion[aá]ri[oa]|colega|representante|procurador[a]?)\b|\b(advogad[oa]|esposa|marido|filh[oa]|m[aã]e|pai|irm[aã]o?) del[ea]\b/i;
 const RE_IDENTIDADE = /^(sim|ss+|sou|sou eu|eu|eu mesm[oa]|el[ea] mesm[oa]|[eé] (el[ea]|eu|sim|o pr[oó]prio|a pr[oó]pria|o mesmo|a mesma)|falando|positivo|correto|exato|isso|pois n[aã]o|confirmo|pode falar|fala|falo sim|perfeitamente|com certeza|certo)\b|\b(sou eu|sou (o|a) |eu mesm[oa]|falo sim|sim,? (sou|[eé]|falo)|[eé] (ele|ela) mesm[oa]|[eé] (o|a) pr[oó]pri[oa]|sim senhor|sim senhora)\b/i;
 const RE_CIENCIA = /\breceb(i|ido|emos)\b|\bciente\b|\bconfirmo\b|tomei ci[eê]ncia/i;
 const RE_CPF = /\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-.\s]?\d{2}\b|\b\d{5,}\b/;
@@ -410,7 +411,11 @@ export function analisarConversa(msgs, meta = {}) {
   if (abordagem) ev('Primeira abordagem', abordagem);
 
   // Intimação / citação e arquivos
-  const candAto = serv(/fica (vossa senhoria|v\.?\s?s)|ficam vossas|(intimad|citad)[oa]s?\s?\(a\)|(intimad|citad)[oa]s?\b/).filter((m) => !falha409(m) && !RE_SAUDACAO.test(m.texto));
+  // Mensagem do ato: "Fica(m) Vossa(s) Senhoria(s)...", "INTIMADO(A)", "citado(a)" — não qualquer frase com
+  // "intimados" ("Não fazemos intimação para advogados, pois são intimados no Projudi")
+  const candAto = msgs.filter((m) => m.lado === 'servidor' && !falha409(m) && !RE_SAUDACAO.test(m.texto)
+    && !/n[aã]o (fazemos|realizamos|podemos)/i.test(m.texto)
+    && (/fica(m)?\s+(vossa|vossas|v\.?\s?s)/i.test(m.texto) || /(INTIMAD|CITAD)[OA]S?/.test(m.texto) || /(intimad|citad)[oa]s?\s?\(a\)/i.test(m.texto)));
   const msgAto = candAto.find((m) => !/nesta oportunidade[^.]*tomar ci[eê]ncia/i.test(m.texto)) || candAto[0];
   const arquivos = serv(/compartilhou um arquivo|c[oó]digo de\s?acesso\.p|\.pdf\b[^.]{0,40}(kb|mb|abrir)/);
   // Tipo do ato: rodapé / nome do arquivo; senão, a própria mensagem do ato ("fica V.S. CITADO/INTIMADO");
@@ -531,6 +536,12 @@ export function analisarConversa(msgs, meta = {}) {
     if (!n) continue;
     if (RE_TERCEIRO.test(n)) { negativa = r; break; }
     if (RE_IDENTIDADE.test(n)) { decisiva = r; break; }
+  }
+  // Mesmo depois de um "sim": quem se apresenta como advogado, esposa, filho... da parte é terceiro
+  const papel = antes.map((r) => ({ r, m: r.texto.match(RE_PAPEL) })).find((x) => x.m);
+  if (papel) {
+    negativa = papel.r; decisiva = null;
+    f.papelTerceiro = (papel.m[1] || papel.m[2]).toLowerCase();
   }
   f.identidade = decisiva ? decisiva.tempo : null;
   if (decisiva) ev('Confirmação de identidade', decisiva);
@@ -931,7 +942,11 @@ export function gerarFrustrada(base, lista) {
     switch (gr.situacao) {
       case 'FRUST_SEM_WHATSAPP': return { pelo, r1: `não tendo sido possível o envio da mensagem, ${erro404(gr)}`, r2: `não foi possível o envio da mensagem, ${erro404(gr)}` };
       case 'FRUST_BUSCA': return { pelo, r1: `não tendo sido possível o envio de mensagem, ${busca(gr)}`, r2: `não foi possível o envio de mensagem, ${busca(gr)}` };
-      case 'FRUST_TERCEIRO': return { r1: 'tendo a pessoa que respondeu negado tratar-se da parte quando questionada, tratando-se, portanto, de terceiro', r2: 'a pessoa que respondeu negou tratar-se da parte quando questionada, tratando-se, portanto, de terceiro' };
+      case 'FRUST_TERCEIRO': {
+        const pap = gr.itens[0].papel;
+        if (pap) return { r1: `tendo a pessoa que respondeu se identificado como ${pap} da parte, tratando-se, portanto, de terceiro`, r2: `a pessoa que respondeu identificou-se como ${pap} da parte, tratando-se, portanto, de terceiro` };
+        return { r1: 'tendo a pessoa que respondeu negado tratar-se da parte quando questionada, tratando-se, portanto, de terceiro', r2: 'a pessoa que respondeu negou tratar-se da parte quando questionada, tratando-se, portanto, de terceiro' };
+      }
       case 'FRUST_SEM_IDENT': return { r1: 'tendo a pessoa que respondeu deixado de confirmar tratar-se da parte, embora questionada', r2: 'a pessoa que respondeu não confirmou tratar-se da parte, embora questionada' };
       case 'FRUST_NAO_COMPROVOU': return { r1: `tendo a pessoa que respondeu afirmado tratar-se da parte; ${naoComprovou}`, r2: `a pessoa que respondeu afirmou tratar-se da parte; ${naoComprovou}` };
       case 'EMAIL_FRUSTRADA': return { r1: 'não tendo obtido resposta', r2: 'não foi obtida resposta' };
