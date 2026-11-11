@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.8.8';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.8';
+import * as N from './nucleo.js?v=0.8.9';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.9';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -7,7 +7,7 @@ const estado = window.__ciri = {
   adicionando: false, atoConfirmado: false, contatos: [],
 };
 
-const CAMPOS = ['situacao', 'tipo', 'qualificacao', 'pj', 'nomes', 'telefone', 'numeroComum', 'textoComum', 'email',
+const CAMPOS = ['situacao', 'tipo', 'qualificacao', 'pj', 'representante', 'nomes', 'telefone', 'numeroComum', 'textoComum', 'email',
   'data', 'hora', 'tipoAto', 'evento', 'extras', 'identidadeData', 'identidadeHora', 'frase', 'tacita',
   'docTipo', 'audData', 'audHora', 'audLink', 'audFrust', 'encData', 'encHora', 'emailDocs', 'confData', 'confHora', 'confEmail', 'confPor'];
 const ehFrustrada = N.ehFrustrada;
@@ -108,6 +108,7 @@ function preencher(fo, usadas) {
   v.nomes = nomes.join('\n');
   v.qualificacao = qualificacaoInicial(f, v.tipo);
   v.pj = !!f.pj;
+  v.representante = f.representante || '';
   v.telefone = f.telefone || '';
   v.numeroComum = nomes.length > 1;
   v.textoComum = nomes.length > 1 ? 'número comum a ambas as partes' : $('textoComum').value;
@@ -234,7 +235,7 @@ $('escolhaAto').addEventListener('click', (e) => {
     if (!fo.msgs || !fo.msgs.length || fo.f.canal === 'email') continue;
     const antigo = fo.f;
     const f = N.analisarConversa(fo.msgs, { ...(fo.meta || {}), telefone: antigo.telefone, ato: b.dataset.v });
-    f.nomes = antigo.nomes; f.nome = antigo.nome; f.pj = antigo.pj;
+    f.nomes = antigo.nomes; f.nome = antigo.nome; f.pj = antigo.pj; f.representante = antigo.representante;
     if (antigo.audiencia && !f.audiencia) f.audiencia = antigo.audiencia;
     fo.f = f;
   }
@@ -274,6 +275,7 @@ function ajustarCampos() {
   document.querySelectorAll('[data-frust]').forEach((el) => { el.hidden = !frust; });
   document.querySelectorAll('[data-comum]').forEach((el) => { el.hidden = canal !== 'whatsapp' || !$('numeroComum').checked; });
   $('situacao').closest('label').hidden = frust && estado.contatos.length > 1;
+  document.querySelectorAll('[data-pj]').forEach((el) => { el.hidden = !$('pj').checked; });
 }
 
 // ---------- Gerar certidões ----------
@@ -528,6 +530,7 @@ function receberConversa(d) {
     f.nomes = N.escolherNome({ titulo: d.nome || msgs.titulo, saudacao: f.nomeSaudacao });
     f.nome = f.nomes.join('\n');
     f.pj = f.pj || f.nomes.some((n) => N.ehPessoaJuridica(n));
+    N.ajustarPessoaJuridica(f);
     if (d.avisoTelefone) { f.avisos = f.avisos.filter((a) => !/telefone não aparece/.test(a)); f.avisos.unshift(d.avisoTelefone); }
     fonte = { tipo: 'conversa', f, msgs, meta: {} };
   }
@@ -564,7 +567,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.8.8', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.8.9', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }

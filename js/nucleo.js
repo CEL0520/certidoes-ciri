@@ -557,6 +557,9 @@ export function analisarConversa(msgs, meta = {}) {
   const sauda = msgs.find((m) => /falo com|falar com/i.test(m.texto));
   const mn = sauda && sauda.texto.match(/fal(?:o|ar) com\s*(?:o|a)?\s*(?:\(a\)\s*)?(?:(?:Sr|Sra|Senhor|Senhora)\s*\(?a?\)?\.?|representante (?:legal )?da empresa)\s*([^?]{3,90}?)\s*\?/i);
   f.nomeSaudacao = mn ? limparNome(mn[1]) : '';
+  // "Sr(a). Nivaldo Antonio Bueno, representante legal da pessoa jurídica NB AGRÍCOLA LTDA?"
+  const mr = mn && mn[1].match(/^(.+?),?\s+representante\s+(?:legal\s+)?d[aeo]\s+(?:pessoa\s+jur[ií]dica\s+|empresa\s+)?(.+)$/i);
+  if (mr) { f.nomeSaudacao = limparNome(mr[2]); f.repSaudacao = limparNome(mr[1]); f.pj = true; }
   if (!f.nome && f.nomeSaudacao) f.nome = f.nomeSaudacao;
   f.pj = ehPessoaJuridica(f.nome, sauda ? sauda.texto : '');
   if (!f.telefone && !msgs.buscaSemResultado) f.avisos.push('O telefone não aparece no print. Preencha manualmente.');
@@ -759,7 +762,7 @@ export function nomeProprio(s) {
   return (s || '').toLowerCase().split(/\s+/).filter(Boolean)
     .map((w, i) => {
       if (i > 0 && minusc.has(w)) return w;
-      if (SIGLAS.has(w)) return w.toUpperCase();
+      if (SIGLAS.has(w) || (/^[a-zç]{2,4}$/.test(w) && !/[aeiouy]/.test(w))) return w.toUpperCase();
       return w.replace(/^(\p{L})/u, (l) => l.toUpperCase());
     }).join(' ').replace(/\bLtda\.?\b/gi, 'Ltda');
 }
@@ -856,7 +859,7 @@ export function gerarCertidao(c0) {
   const oqual = 'que';
   const ato = c.tipo === 'citacao' ? 'citação' : 'intimação';
   const B = (s) => (s ? `**${s}**` : '**[preencher]**');
-  const nome = B(c.nome) + (c.pj ? ', na pessoa de seu representante legal' : '');
+  const nome = B(c.nome) + (c.pj ? `, na pessoa de seu representante legal${c.representante ? `, ${B(c.representante)}` : ''}` : '');
   const tel = B(c.telefone);
   const comum = c.numeroComum ? `, ${c.textoComum || 'número comum a ambas as partes'}` : '';
   const dia = (d, h) => `no dia ${B(d)}, às ${B(h)}`;
@@ -926,7 +929,7 @@ export function gerarFrustrada(base, lista) {
     if (ult && ult.data === k.data && ult.hora === k.hora && ult.situacao === k.situacao && ult.canal === k.canal && k.data) ult.itens.push(k);
     else grupos.push({ ...k, itens: [k] });
   }
-  const alvo = `${qual} ${B(c.nome)}${c.pj ? ', na pessoa de seu representante legal' : ''}${c.audFrust && c.tipo === 'citacao' ? ', bem como à sua intimação para a audiência designada' : ''}`;
+  const alvo = `${qual} ${B(c.nome)}${c.pj ? `, na pessoa de seu representante legal${c.representante ? `, ${B(c.representante)}` : ''}` : ''}${c.audFrust && c.tipo === 'citacao' ? ', bem como à sua intimação para a audiência designada' : ''}`;
   const numeros = (gr) => {
     const v = gr.itens.map((k) => B(gr.canal === 'email' ? k.email : k.telefone));
     if (gr.canal === 'email') return `${v.length > 1 ? 'aos endereços' : 'ao endereço'} ${juntar(v)}`;
@@ -1038,6 +1041,7 @@ export function analisarTelas(telas, meta = {}) {
     f.nomes = nomes;
     f.nome = nomes.join('\n');
     f.pj = f.pj || nomes.some((n) => ehPessoaJuridica(n));
+    ajustarPessoaJuridica(f);
     if (meta.audiencia && !f.audiencia) f.audiencia = { data: '', hora: '', link: false, msg: false };
     f.avisos.unshift(...g.avisos);
     resultados.push({ f, msgs, telas: g.telas });
@@ -1083,4 +1087,28 @@ export function telefoneDeDigitos(texto) {
   for (const t of toks) { const d = t.replace(/\D/g, ''); if (t.startsWith('+') && ok(d.slice(0, d[4] === '9' ? 13 : 12))) return formatarTelefone(d.slice(0, d[4] === '9' ? 13 : 12)); }
   for (const t of toks) { const d = t.replace(/\D/g, ''); if (ok(d)) return formatarTelefone(d); }
   return '';
+}
+
+// Pessoa jurídica: separa o representante do nome ("NB AGRÍCOLA LTDA (REPRESENTADA POR NIVALDO)",
+// "Nivaldo Antonio Bueno, Representante Legal da Pessoa Jurídica NB Agrícola Ltda")
+export function separarRepresentante(nome) {
+  let m = (nome || '').match(/^(.+?)\s*\(\s*(?:representad[ao]|rep\.?)\s+(?:por|pel[oa])\s+(.+?)\s*\)\s*$/i);
+  if (m) return { nome: limparNome(m[1]), representante: limparNome(m[2]) };
+  m = (nome || '').match(/^(.+?),?\s+representante\s+(?:legal\s+)?d[aeo]\s+(?:pessoa\s+jur[ií]dica\s+|empresa\s+)?(.+)$/i);
+  if (m) return { nome: limparNome(m[2]), representante: limparNome(m[1]) };
+  return { nome, representante: '' };
+}
+export function ajustarPessoaJuridica(f) {
+  let rep = f.repSaudacao || '';
+  f.nomes = (f.nomes || []).map((n) => {
+    const r = separarRepresentante(n);
+    if (r.representante) { f.pj = true; if (r.representante.length > rep.length) rep = r.representante; }
+    return r.nome;
+  });
+  // o nome mais completo do representante vence ("Nivaldo" < "Nivaldo Antonio Bueno")
+  if (f.repSaudacao && norm(f.repSaudacao).startsWith(norm(rep).split(' ')[0])) rep = f.repSaudacao.length >= rep.length ? f.repSaudacao : rep;
+  f.representante = rep;
+  f.nome = f.nomes.join('\n');
+  f.pj = f.pj || f.nomes.some((n) => ehPessoaJuridica(n));
+  return f;
 }
