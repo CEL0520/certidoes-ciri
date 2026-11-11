@@ -1,8 +1,8 @@
 // Leitura dos arquivos anexados: PDF (texto + imagens dos prints) e imagens soltas.
 // Tudo acontece no navegador, sem enviar nada para fora.
 import * as pdfjsLib from '../lib/pdfjs/pdf.min.mjs';
-import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.9.0';
-import * as N from './nucleo.js?v=0.9.0';
+import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.9.1';
+import * as N from './nucleo.js?v=0.9.1';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 

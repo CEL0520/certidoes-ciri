@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.9.0';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.9.0';
+import * as N from './nucleo.js?v=0.9.1';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.9.1';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -568,7 +568,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.0', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.1', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -580,3 +580,35 @@ function el_click_guard() {
 }
 
 if (location.hash === '#leitor') progresso('Recebendo a conversa lida…');
+
+// ---------- Aviso de nova versão ----------
+// O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
+// mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
+export const VERSAO = '0.9.1';
+const maisNova = (a, b) => {
+  const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
+};
+let adiada = '';
+async function verificarVersao() {
+  if (/^(chrome|moz)-extension:/.test(location.protocol)) return; // a extensão é atualizada à mão
+  try {
+    const r = await fetch(`versao.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = await r.json();
+    if (!v.versao || !maisNova(v.versao, VERSAO) || adiada === v.versao) return;
+    $('nvNumero').textContent = v.versao;
+    $('nvNovidades').textContent = (v.novidades || []).length ? '· ' + v.novidades.join('; ') : '';
+    $('novaVersao').hidden = false;
+  } catch { /* sem internet: segue com a versão carregada */ }
+}
+$('nvAtualizar').onclick = () => {
+  // endereço novo obriga o navegador a buscar a página (e os arquivos) atualizados
+  location.replace(`${location.pathname}?atualizado=${Date.now()}${location.hash}`);
+};
+$('nvDepois').onclick = () => { adiada = $('nvNumero').textContent; $('novaVersao').hidden = true; };
+if (/[?&]atualizado=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash);
+verificarVersao();
+setInterval(verificarVersao, 30 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarVersao(); });
