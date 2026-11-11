@@ -76,7 +76,7 @@ function lerSeloData(texto, hoje) {
 // ---------------------------------------------------------------------------
 // Padrões das mensagens
 // ---------------------------------------------------------------------------
-const RE_SISTEMA = /digite uma mensagem|\bdigit\b|visualizada por \d|\bversa visualizada|\batribu(iu|i)?\s*(a si|$)|ctr[li]\s*\+?\s*s\s*agendar|^\W{0,3}(?:[A-Za-z]{1,2}\s)?(a[cç][oõ]es da conversa|macros|informa[cç][aã]o da conversa|atributos do contato|notas do contato|anexos|conversas anteriores|participantes da conversa|etiquetas d[ae] (contato|conversa)|agente atribu|time atribu|prioridade|nenhuma macro)|atribuiu a si mesm|conversa visualizada|mensagem n[aã]o lida|conversa (resolvida|reaberta|marcada)|criado \d+ days|transcri[cç][aã]o autom|^mensagem de [aá]udio$|^\(?\d+\/\d+\)?$|^0?0:\d\d ?\/ ?0?0:\d\d|mensagens mais antigas|obter as mensagens|criptografia de ponta|encriptadas ponto|mensagens tempor[aá]rias|conversa expirada|esta conversa expirou|reenviar template|selecionar template|selecione um template|^mensagem apagada$|^falha ao enviar$|clique para saber mais|^hoje [eé] o dia/i;
+const RE_SISTEMA = /foi marcada como|marcada como resolvida|digite uma mensagem|\bdigit\b|visualizada por \d|\bversa visualizada|\batribu(iu|i)?\s*(a si|$)|ctr[li]\s*\+?\s*s\s*agendar|^\W{0,3}(?:[A-Za-z]{1,2}\s)?(a[cç][oõ]es da conversa|macros|informa[cç][aã]o da conversa|atributos do contato|notas do contato|anexos|conversas anteriores|participantes da conversa|etiquetas d[ae] (contato|conversa)|agente atribu|time atribu|prioridade|nenhuma macro)|atribuiu a si mesm|conversa visualizada|mensagem n[aã]o lida|conversa (resolvida|reaberta|marcada)|criado \d+ days|transcri[cç][aã]o autom|^mensagem de [aá]udio$|^\(?\d+\/\d+\)?$|^0?0:\d\d ?\/ ?0?0:\d\d|mensagens mais antigas|obter as mensagens|criptografia de ponta|encriptadas ponto|mensagens tempor[aá]rias|conversa expirada|esta conversa expirou|reenviar template|selecionar template|selecione um template|^mensagem apagada$|^falha ao enviar$|clique para saber mais|^hoje [eé] o dia/i;
 // Saudação / primeira abordagem do servidor, reconhecida pelo sentido (cada colaborador escreve de um jeito)
 const RE_SAUDACAO = /falo com|falar com|confirmar se (neste|nesse|este|esse)|(neste|nesse) (telefone|n[uú]mero|contato|whats)|dar continuidade ao seu atendimento|template\s*:|meu nome [eé] .{2,60}(tribunal|trabalho|central|n[uú]mero|telefone)|estou entrando em contato|entrando em contato em nome|com quem (eu )?falo/i;
 // Respostas automáticas (contas comerciais, ausência)
@@ -558,8 +558,12 @@ export function analisarConversa(msgs, meta = {}) {
   const mn = sauda && sauda.texto.match(/fal(?:o|ar) com\s*(?:o|a)?\s*(?:\(a\)\s*)?(?:(?:Sr|Sra|Senhor|Senhora)\s*\(?a?\)?\.?|representante (?:legal )?da empresa)\s*([^?]{3,90}?)\s*\?/i);
   f.nomeSaudacao = mn ? limparNome(mn[1]) : '';
   // "Sr(a). Nivaldo Antonio Bueno, representante legal da pessoa jurídica NB AGRÍCOLA LTDA?"
-  const mr = mn && mn[1].match(/^(.+?),?\s+representante\s+(?:legal\s+)?d[aeo]\s+(?:pessoa\s+jur[ií]dica\s+|empresa\s+)?(.+)$/i);
-  if (mr) { f.nomeSaudacao = limparNome(mr[2]); f.repSaudacao = limparNome(mr[1]); f.pj = true; }
+  // Representação: "Sr(a). X, representante legal da pessoa jurídica Y?", "Sr(a). X, genitora e representante de Y?"
+  const rep = mn && lerRepresentacao(mn[1]);
+  if (rep) {
+    f.nomeSaudacao = rep.parte; f.repSaudacao = rep.representante; f.papelRep = rep.papel;
+    if (rep.pj) f.pj = true;
+  }
   if (!f.nome && f.nomeSaudacao) f.nome = f.nomeSaudacao;
   f.pj = ehPessoaJuridica(f.nome, sauda ? sauda.texto : '');
   if (!f.telefone && !msgs.buscaSemResultado) f.avisos.push('O telefone não aparece no print. Preencha manualmente.');
@@ -859,7 +863,7 @@ export function gerarCertidao(c0) {
   const oqual = 'que';
   const ato = c.tipo === 'citacao' ? 'citação' : 'intimação';
   const B = (s) => (s ? `**${s}**` : '**[preencher]**');
-  const nome = B(c.nome) + (c.pj ? `, na pessoa de seu representante legal${c.representante ? `, ${B(c.representante)}` : ''}` : '');
+  const nome = B(c.nome) + clausulaRepresentante(c, B);
   const tel = B(c.telefone);
   const comum = c.numeroComum ? `, ${c.textoComum || 'número comum a ambas as partes'}` : '';
   const dia = (d, h) => `no dia ${B(d)}, às ${B(h)}`;
@@ -929,7 +933,7 @@ export function gerarFrustrada(base, lista) {
     if (ult && ult.data === k.data && ult.hora === k.hora && ult.situacao === k.situacao && ult.canal === k.canal && k.data) ult.itens.push(k);
     else grupos.push({ ...k, itens: [k] });
   }
-  const alvo = `${qual} ${B(c.nome)}${c.pj ? `, na pessoa de seu representante legal${c.representante ? `, ${B(c.representante)}` : ''}` : ''}${c.audFrust && c.tipo === 'citacao' ? ', bem como à sua intimação para a audiência designada' : ''}`;
+  const alvo = `${qual} ${B(c.nome)}${clausulaRepresentante(c, B)}${c.audFrust && c.tipo === 'citacao' ? ', bem como à sua intimação para a audiência designada' : ''}`;
   const numeros = (gr) => {
     const v = gr.itens.map((k) => B(gr.canal === 'email' ? k.email : k.telefone));
     if (gr.canal === 'email') return `${v.length > 1 ? 'aos endereços' : 'ao endereço'} ${juntar(v)}`;
@@ -1091,24 +1095,57 @@ export function telefoneDeDigitos(texto) {
 
 // Pessoa jurídica: separa o representante do nome ("NB AGRÍCOLA LTDA (REPRESENTADA POR NIVALDO)",
 // "Nivaldo Antonio Bueno, Representante Legal da Pessoa Jurídica NB Agrícola Ltda")
+// Lê "X, <qualidade> de Y": devolve { representante: X, papel, parte: Y, pj }.
+// Qualidades: representante (legal), genitor(a), mãe, pai, tutor(a), curador(a), responsável (legal), procurador(a)...
+const RE_PAPEL_REP = /^(.+?),?\s+(representante|genitora|genitor|m[aã]e|pai|tutora?|curadora?|respons[aá]vel|procuradora?|administradora?|s[oó]ci[oa](?:[- ]administrador[a]?)?)(?:\s+legal)?(?:\s+e\s+(representante|respons[aá]vel)(?:\s+legal)?)?\s+(?:d[aeo]s?|por|pel[oa])\s+(?:(pessoa\s+jur[ií]dica|empresa)\s+|(?:menor|crian[cç]a|adolescente|incapaz)\s+)?(.+)$/i;
+export function lerRepresentacao(texto) {
+  const m = (texto || '').replace(/\s+/g, ' ').trim().match(RE_PAPEL_REP);
+  if (!m) return null;
+  const leg = (p) => (/^(representante|respons[aá]vel)$/i.test(p) ? `${p.toLowerCase()} legal` : p.toLowerCase());
+  const papel = m[3] ? `${m[2].toLowerCase()} e ${leg(m[3])}` : leg(m[2]);
+  const parte = limparNome(m[5]);
+  return { representante: limparNome(m[1]), papel: papel.replace('responsavel', 'responsável').replace(/^mae/, 'mãe'), parte, pj: !!m[4] || ehPessoaJuridica(parte) };
+}
 export function separarRepresentante(nome) {
   let m = (nome || '').match(/^(.+?)\s*\(\s*(?:representad[ao]|rep\.?)\s+(?:por|pel[oa])\s+(.+?)\s*\)\s*$/i);
   if (m) return { nome: limparNome(m[1]), representante: limparNome(m[2]) };
-  m = (nome || '').match(/^(.+?),?\s+representante\s+(?:legal\s+)?d[aeo]\s+(?:pessoa\s+jur[ií]dica\s+|empresa\s+)?(.+)$/i);
-  if (m) return { nome: limparNome(m[2]), representante: limparNome(m[1]) };
+  const r = lerRepresentacao(nome);
+  if (r) return { nome: r.parte, representante: r.representante, papel: r.papel };
   return { nome, representante: '' };
 }
 export function ajustarPessoaJuridica(f) {
   let rep = f.repSaudacao || '';
+  let papel = f.papelRep || '';
+  const mesmo = (a, b) => a && b && norm(a).split(' ')[0] === norm(b).split(' ')[0];
   f.nomes = (f.nomes || []).map((n) => {
     const r = separarRepresentante(n);
-    if (r.representante) { f.pj = true; if (r.representante.length > rep.length) rep = r.representante; }
+    if (r.representante) {
+      if (ehPessoaJuridica(r.nome)) f.pj = true;
+      if (r.representante.length > rep.length && (!rep || mesmo(r.representante, rep))) rep = r.representante;
+      if (r.papel && !papel) papel = r.papel;
+    }
     return r.nome;
   });
-  // o nome mais completo do representante vence ("Nivaldo" < "Nivaldo Antonio Bueno")
-  if (f.repSaudacao && norm(f.repSaudacao).startsWith(norm(rep).split(' ')[0])) rep = f.repSaudacao.length >= rep.length ? f.repSaudacao : rep;
+  // Nome da parte: o da abordagem; o do arquivo/rodapé só vence se for a mesma pessoa com o nome mais completo.
+  // Se o arquivo traz o nome do representante (ex.: a genitora), fica o da parte, da abordagem.
+  const s = f.nomeSaudacao;
+  if (s && f.nomes.length === 1) {
+    const n = f.nomes[0];
+    if (rep && mesmo(n, rep) && !mesmo(n, s)) { if (n.length > rep.length) rep = n; f.nomes = [s]; }
+    else if (mesmo(n, s)) f.nomes = [n.length > s.length ? n : s];
+    else if (rep || f.repSaudacao) f.nomes = [s];
+  }
   f.representante = rep;
+  f.papelRep = papel;
   f.nome = f.nomes.join('\n');
   f.pj = f.pj || f.nomes.some((n) => ehPessoaJuridica(n));
   return f;
+}
+
+// ", na pessoa de sua genitora e representante legal, Fulana" / ", na pessoa de seu representante legal"
+export function clausulaRepresentante(c, B) {
+  if (!c.pj && !c.representante) return '';
+  const papel = (c.papelRep || 'representante legal').trim();
+  const art = /^(genitora|m[aã]e|tutora|curadora|procuradora|administradora|s[oó]cia)\b/i.test(papel) ? 'sua' : 'seu';
+  return `, na pessoa de ${art} ${papel}${c.representante ? `, ${B(c.representante)}` : ''}`;
 }

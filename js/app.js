@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.8.9';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.8.9';
+import * as N from './nucleo.js?v=0.9.0';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.9.0';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -7,7 +7,7 @@ const estado = window.__ciri = {
   adicionando: false, atoConfirmado: false, contatos: [],
 };
 
-const CAMPOS = ['situacao', 'tipo', 'qualificacao', 'pj', 'representante', 'nomes', 'telefone', 'numeroComum', 'textoComum', 'email',
+const CAMPOS = ['situacao', 'tipo', 'qualificacao', 'pj', 'representante', 'papelRep', 'nomes', 'telefone', 'numeroComum', 'textoComum', 'email',
   'data', 'hora', 'tipoAto', 'evento', 'extras', 'identidadeData', 'identidadeHora', 'frase', 'tacita',
   'docTipo', 'audData', 'audHora', 'audLink', 'audFrust', 'encData', 'encHora', 'emailDocs', 'confData', 'confHora', 'confEmail', 'confPor'];
 const ehFrustrada = N.ehFrustrada;
@@ -107,8 +107,9 @@ function preencher(fo, usadas) {
   const nomes = (f.nomes && f.nomes.length ? f.nomes : (f.nome || '').split('\n')).filter(Boolean);
   v.nomes = nomes.join('\n');
   v.qualificacao = qualificacaoInicial(f, v.tipo);
-  v.pj = !!f.pj;
+  v.pj = !!f.pj || !!f.representante;
   v.representante = f.representante || '';
+  v.papelRep = f.papelRep || 'representante legal';
   v.telefone = f.telefone || '';
   v.numeroComum = nomes.length > 1;
   v.textoComum = nomes.length > 1 ? 'número comum a ambas as partes' : $('textoComum').value;
@@ -235,7 +236,7 @@ $('escolhaAto').addEventListener('click', (e) => {
     if (!fo.msgs || !fo.msgs.length || fo.f.canal === 'email') continue;
     const antigo = fo.f;
     const f = N.analisarConversa(fo.msgs, { ...(fo.meta || {}), telefone: antigo.telefone, ato: b.dataset.v });
-    f.nomes = antigo.nomes; f.nome = antigo.nome; f.pj = antigo.pj; f.representante = antigo.representante;
+    f.nomes = antigo.nomes; f.nome = antigo.nome; f.pj = antigo.pj; f.representante = antigo.representante; f.papelRep = antigo.papelRep;
     if (antigo.audiencia && !f.audiencia) f.audiencia = antigo.audiencia;
     fo.f = f;
   }
@@ -567,7 +568,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.8.9', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.0', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
