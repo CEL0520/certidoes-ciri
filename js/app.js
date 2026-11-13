@@ -1,5 +1,5 @@
-import * as N from './nucleo.js?v=0.9.1';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.9.1';
+import * as N from './nucleo.js?v=0.9.2';
+import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.9.2';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -568,7 +568,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.1', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.2', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -584,7 +584,7 @@ if (location.hash === '#leitor') progresso('Recebendo a conversa lida…');
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.1';
+export const VERSAO = '0.9.2';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
