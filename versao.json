@@ -1,8 +1,8 @@
 {
-  "versao": "0.9.3",
+  "versao": "0.9.4",
   "data": "17/11/2026",
   "novidades": [
-    "PDF do print do WhatsApp Web: captura a conversa e os dados do contato, com as fotos da parte",
-    "fotos ou PDFs enviados pela parte podem ser arrastados para o PDF do print"
+    "aviso quando o botão Ler conversa da barra de favoritos está desatualizado (arraste de novo)",
+    "PDF do print do WhatsApp Web"
   ]
 }

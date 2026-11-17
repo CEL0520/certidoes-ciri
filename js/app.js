@@ -1,6 +1,6 @@
-import * as N from './nucleo.js';
-import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js';
-import { montarPdfPrint, arquivosParaFotos } from './printpdf.js';
+import * as N from './nucleo.js?v=0.9.4';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.4';
+import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.4';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -541,6 +541,9 @@ function receberConversa(d) {
     estado.print = { cab: d.print.cab || {}, telas: d.print.telas, fotos: (d.print.fotos || []).map((f) => ({ ...f, auto: true })) };
     mostrarPrint();
   }
+  if (!/^(chrome|moz)-extension:/.test(location.protocol) && !(d.botao >= 4) && fonte.f && fonte.f.avisos) {
+    fonte.f.avisos.unshift('O botão "Ler conversa" da sua barra de favoritos é de uma versão antiga (sem "Gerar PDF do print"). Apague-o e arraste de novo o botão dourado deste site para a barra.');
+  }
   fonte.arquivo = `Conversa lida – ${d.origem}`;
   fonte.lida = d;
   fonte.ativa = true;
@@ -574,7 +577,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.4', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -656,7 +659,7 @@ if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#le
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.3';
+export const VERSAO = '0.9.4';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }

@@ -177,7 +177,7 @@
     : 'O telefone não aparece na tela: abra o painel de dados do contato e leia de novo, ou preencha o telefone.';
   if (ehWhats && RE_TEL.test(nome)) { telefones.unshift(nome.match(RE_TEL)[0]); nome = ''; avisoTelefone = ''; }
   const dados = {
-    tipo: 'ciri-conversa', versao: 1,
+    tipo: 'ciri-conversa', versao: 1, botao: 4,
     origem: location.host, titulo: document.title,
     largura: pagina ? window.innerWidth : caixa.clientWidth,
     linhas: lista, telefones, nome, avisoTelefone,
