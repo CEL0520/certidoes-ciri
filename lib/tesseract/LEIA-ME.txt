@@ -1,4 +1,10 @@
-Opcional: coloque aqui os 5 arquivos do OCR (tesseract.min.js, worker.min.js,
-tesseract-core-simd-lstm.wasm.js, tesseract-core-lstm.wasm.js, por.traineddata.gz)
-para o site não depender da CDN da internet. Sem eles, o site carrega o OCR
-da CDN jsDelivr automaticamente.
+Coloque nesta pasta os 5 arquivos do reconhecimento de texto (OCR):
+
+  tesseract.min.js
+  worker.min.js
+  tesseract-core-simd-lstm.wasm.js
+  tesseract-core-lstm.wasm.js
+  por.traineddata.gz
+
+Use o "baixar-ocr.ps1" (botão direito > Executar com o PowerShell)
+ou veja os links no LEIA-ME.txt da pasta principal.

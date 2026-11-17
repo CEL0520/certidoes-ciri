@@ -1,0 +1,102 @@
+CERTIDÕES CIRI – versão de teste 0.3
+=====================================
+
+Gera certidões de citação e intimação a partir do print da conversa
+(PDF ou imagem, de qualquer sistema de chat) ou do PDF de um e-mail.
+Funciona com modelos de print diferentes: não depende de um layout fixo.
+Tudo é processado no próprio computador: nada é enviado nem guardado.
+
+
+1. INSTALAR A EXTENSÃO
+----------------------
+Descompacte o arquivo .zip numa pasta fixa (ex.: Documentos\certidoes-ciri).
+Não apague nem mova a pasta depois de instalar.
+
+Chrome
+  1. Abra  chrome://extensions
+  2. Ative "Modo do desenvolvedor" (canto superior direito).
+  3. Clique em "Carregar sem compactação" e escolha a pasta descompactada.
+  4. Clique no ícone de quebra-cabeça e fixe "Certidões CIRI".
+
+Edge
+  1. Abra  edge://extensions
+  2. Ative "Modo de desenvolvedor" (menu lateral).
+  3. Clique em "Carregar descompactada" e escolha a pasta.
+
+Firefox (versão 128 ou mais recente)
+  1. Abra  about:debugging#/runtime/this-firefox
+  2. Clique em "Carregar complemento temporário…" e escolha o arquivo
+     manifest.json dentro da pasta.
+  Obs.: no Firefox a extensão some ao fechar o navegador e precisa ser
+  carregada de novo. Isso é normal nesta fase de testes.
+
+Para usar: clique no ícone da extensão e em "Abrir o gerador".
+
+
+2. INSTALAR O RECONHECIMENTO DE TEXTO (OCR) – necessário para ler prints
+-------------------------------------------------------------------------
+Os prints trazem a conversa como imagem. Para a extensão "ler" a imagem,
+ela usa o Tesseract.js (gratuito, de código aberto), que roda no próprio
+computador. Basta baixar 5 arquivos uma única vez e colocá-los na pasta
+lib\tesseract da extensão:
+
+  tesseract.min.js
+    https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js
+  worker.min.js
+    https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js
+  tesseract-core-simd-lstm.wasm.js
+    https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd-lstm.wasm.js
+  tesseract-core-lstm.wasm.js
+    https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-lstm.wasm.js
+  por.traineddata.gz   (dicionário de português)
+    https://cdn.jsdelivr.net/npm/@tesseract.js-data/por/4.0.0_best_int/por.traineddata.gz
+
+Jeito mais fácil (Windows): abra a pasta lib\tesseract, clique com o botão
+direito no arquivo "baixar-ocr.ps1" e escolha "Executar com o PowerShell".
+Se o Windows bloquear, baixe os 5 arquivos pelos links acima (abra cada
+link no navegador e salve com o mesmo nome).
+
+Depois de colocar os arquivos, recarregue a extensão (no Firefox, carregue
+de novo). No topo do gerador deve aparecer "OCR instalado".
+A primeira leitura demora um pouco mais; as seguintes são mais rápidas.
+
+Sem o OCR, a extensão lê só o que o PDF já traz como texto (por exemplo,
+nome, telefone e status no rodapé dos prints da CIRI, ou e-mails em PDF).
+
+
+3. COMO USAR
+------------
+  1. Arraste o print (PDF ou imagem) para a área indicada.
+     Pode anexar vários prints da mesma parte (outros números ou e-mail):
+     - se todos forem frustrados, sai uma certidão única com todos;
+     - se em um deles houve resposta, só ele entra na certidão.
+  2. Confira os dados sugeridos: situação, qualificação da parte, gênero,
+     datas e horas. A qualificação (requerente, requerida, executado…)
+     precisa ser escolhida por você.
+  3. Revise o texto da certidão (dá para editar direto na caixa) e clique
+     em "Copiar com formatação" para colar no sistema com negrito e itálico.
+
+O print aparece ao lado da certidão para conferência. PDFs que já trazem a
+conversa como texto (não como imagem) são lidos na hora, sem OCR.
+
+A análise é uma sugestão. A certidão é sempre revisada por quem assina.
+
+
+4. SITUAÇÕES RECONHECIDAS
+-------------------------
+  Intimação: ciência expressa · ciência tácita · sem manifestação de ciência
+  Citação: efetivada · expedida (somente citação ou com audiência)
+  Frustrada: sem resposta · número sem WhatsApp (erro 404) · terceiro
+  E-mail: efetivada · frustrada
+  Mensagens com falha 409 (sessão desconectada) não contam como tentativa.
+
+Bibliotecas incluídas: PDF.js (Mozilla, licença Apache 2.0) em lib\pdfjs.
+
+NOVO na versão 0.9.3 — PDF do print (WhatsApp Web)
+- Abra a conversa no WhatsApp Web e os "Dados do contato" (clique no nome no topo).
+- Clique no ícone da extensão > "Ler esta conversa". No aviso que aparece, clique em "Gerar PDF do print".
+- A extensão rola a conversa sozinha e fotografa só a conversa e o painel do contato (a lista de outras conversas fica de fora).
+- Depois clique em "Abrir a certidão e o PDF": o gerador abre com a certidão e o quadro "PDF do print".
+  Ali você pode tirar fotos, arrastar fotos ou PDFs enviados pela parte, e clicar em "Baixar PDF do print".
+- A extensão pede permissão para "ler e alterar a aba atual" só quando você clica nela (nada é enviado para a internet).
+- Ao atualizar a extensão, o Chrome pode mostrar o aviso das novas permissões: aceite.
