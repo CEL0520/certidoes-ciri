@@ -1,10 +1,9 @@
 {
-  "versao": "0.9.6",
+  "versao": "0.9.7",
   "data": "17/11/2026",
   "novidades": [
-    "PDF do print: envio ao gerador mais rápido, botões Ver PDF e Baixar PDF",
-    "fotos sempre no fim do PDF",
-    "nome do arquivo: Abordador - 5059047-77 - Nome da Parte - Efetivada - data",
-    "arraste de novo o botão Ler conversa"
+    "PDF do print: duas telas por página, também na primeira (sem espaço em branco)",
+    "a última linha de cada tela abre a tela seguinte — arraste de novo o botão Ler conversa",
+    "botão Limpar print"
   ]
 }

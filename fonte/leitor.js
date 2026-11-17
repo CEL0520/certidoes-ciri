@@ -185,7 +185,7 @@
     : 'O telefone não aparece na tela: abra o painel de dados do contato e leia de novo, ou preencha o telefone.';
   if (ehWhats && RE_TEL.test(nome)) { telefones.unshift(nome.match(RE_TEL)[0]); nome = ''; avisoTelefone = ''; }
   const dados = {
-    tipo: 'ciri-conversa', versao: 1, botao: 6,
+    tipo: 'ciri-conversa', versao: 1, botao: 7,
     origem: location.host, titulo: document.title,
     largura: pagina ? window.innerWidth : caixa.clientWidth,
     linhas: lista, telefones, nome, avisoTelefone,
@@ -317,7 +317,7 @@
         const f = await camera.foto();
         telas.push(await telaParaJpeg(f.fonte, f.largura, area));
         if (caixa.scrollTop + caixa.clientHeight >= caixa.scrollHeight - 2) break;
-        caixa.scrollTop += Math.round(caixa.clientHeight * 0.82); // ~18% da tela anterior se repete
+        caixa.scrollTop += Math.max(Math.round(caixa.clientHeight * 0.5), caixa.clientHeight - 70); // a última linha da tela anterior abre a seguinte
         await espera(300);
         avisarCaptura(`fotografando a conversa (${telas.length} telas)…`);
       }

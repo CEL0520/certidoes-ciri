@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Certidões CIRI</title>
-<link rel="stylesheet" href="estilo.css?v=0.9.6">
+<link rel="stylesheet" href="estilo.css?v=0.9.7">
 <link rel="icon" href="icones/32.png">
 </head>
 <body>
@@ -60,7 +60,7 @@
         Arraste aqui <b>fotos ou PDFs enviados pela parte</b> (documento, selfie) — entram no PDF do print, no espaço livre ou no fim
       </label>
       <label class="print-nome">Nome do arquivo <input id="printNome" spellcheck="false"></label>
-      <div class="print-acoes"><button id="printVer">Ver PDF do print</button><button class="sec" id="printBaixar">Baixar PDF</button> <span id="printEstado" class="print-resumo"></span></div>
+      <div class="print-acoes"><button id="printVer">Ver PDF do print</button><button class="sec" id="printBaixar">Baixar PDF</button> <button class="sec" id="printLimpar" title="Tira este print do gerador (as certidões continuam)">Limpar print</button> <span id="printEstado" class="print-resumo"></span></div>
     </div>
     <details id="secLeitor" class="leitor">
       <summary>Ler a conversa direto do chat ou do e-mail, sem print</summary>
@@ -166,7 +166,7 @@
   </div>
 </main>
 
-<footer class="rodape">Versão <span id="versaoAtual">0.9.6</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
-<script type="module" src="js/app.js?v=0.9.6"></script>
+<footer class="rodape">Versão <span id="versaoAtual">0.9.7</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.9.7"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-import * as N from './nucleo.js?v=0.9.6';
-import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.6';
-import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.6';
+import * as N from './nucleo.js?v=0.9.7';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.7';
+import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.7';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -543,7 +543,7 @@ function receberConversa(d) {
     mostrarPrint();
     prepararPdf();
   }
-  if (!/^(chrome|moz)-extension:/.test(location.protocol) && !(d.botao >= 6) && fonte.f && fonte.f.avisos) {
+  if (!/^(chrome|moz)-extension:/.test(location.protocol) && !(d.botao >= 7) && fonte.f && fonte.f.avisos) {
     fonte.f.avisos.unshift('O botão "Ler conversa" da sua barra de favoritos é de uma versão antiga (sem "Gerar PDF do print"). Apague-o e arraste de novo o botão dourado deste site para a barra.');
   }
   fonte.arquivo = `Conversa lida – ${d.origem}`;
@@ -580,7 +580,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.6', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.7', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -682,6 +682,10 @@ $('printNome').addEventListener('input', () => { if (estado.print) estado.print.
 $('secDados').addEventListener('input', () => setTimeout(atualizarNomePdf, 0));
 $('secDados').addEventListener('change', () => setTimeout(atualizarNomePdf, 0));
 document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#secCertidao, #secDados')) setTimeout(atualizarNomePdf, 0); });
+$('printLimpar').onclick = () => {
+  if (estado.print && estado.print.pdf) URL.revokeObjectURL(estado.print.pdf.url);
+  estado.print = null; mostrarPrint();
+};
 $('printVer').onclick = async () => {
   const p = estado.print;
   if (!p) return;
@@ -716,7 +720,7 @@ if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#le
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.6';
+export const VERSAO = '0.9.7';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }

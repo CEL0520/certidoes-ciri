@@ -152,15 +152,13 @@ export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso
     pg.ops.push(`q 0.6 0.6 0.6 RG 0.6 w ${M + 60} ${yPdf(y + 27)} m ${A4.w - M - 60} ${yPdf(y + 27)} l S Q`);
     y += 33;
     if (paginas.length === 1) {
-      centro('Captura de tela de conversa no WhatsApp Web', y + 11, 10.5, true, [0.12, 0.23, 0.37]);
-      y += 17;
-      y = grifo(y, 12) + 6;
-      const linhas = [];
-      if (cab.nomeWhats || cab.nome) linhas.push(`Nome exibido no WhatsApp: ${cab.nomeWhats || cab.nome}`);
-      if (cab.processo) linhas.push(`Processo nº ${cab.processo}`);
-      linhas.push(`Capturado e gerado em ${dataHora(cab.quando)}`);
-      for (const l of linhas) { centro(l, y + 9, 8.5, false, [0.25, 0.28, 0.33]); y += 12; }
-      y += 6;
+      centro('Captura de tela de conversa no WhatsApp Web', y + 10, 10, true, [0.12, 0.23, 0.37]);
+      y += 14;
+      y = grifo(y, 11) + 3;
+      const l1 = [cab.nomeWhats || cab.nome ? `Nome exibido no WhatsApp: ${cab.nomeWhats || cab.nome}` : '', cab.processo ? `Processo nº ${cab.processo}` : ''].filter(Boolean).join('  ·  ');
+      if (l1) { centro(l1, y + 9, 8, false, [0.25, 0.28, 0.33]); y += 11; }
+      centro(`Capturado e gerado em ${dataHora(cab.quando)}`, y + 9, 8, false, [0.25, 0.28, 0.33]);
+      y += 15;
     } else {
       y = grifo(y, 10) + 8;
     }
@@ -199,21 +197,24 @@ export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso
     }
   };
 
+  // Sempre duas telas por página, ocupando a altura toda (também na 1ª, que tem cabeçalho maior)
   novaPagina();
+  const B = 2.5; // moldura amarela
+  const GAP = 8;
+  let naPagina = 0, maxH = (fundo - y - GAP) / 2 - 2 * B;
   for (let i = 0; i < telas.length; i++) {
     aviso && aviso(`Montando o PDF: tela ${i + 1} de ${telas.length}…`);
     const im = await paraJpeg(telas[i], 1600);
-    const B = 2.5; // moldura amarela
+    if (naPagina === 2) { novaPagina(); naPagina = 0; maxH = (fundo - y - GAP) / 2 - 2 * B; }
     let w = L - 2 * B;
     let h = w * im.h / im.w;
-    const maxH = (fundo - (M + 33 + 22)) / 2 - 2 * B - 8; // duas telas por página
     if (h > maxH) { h = maxH; w = h * im.w / im.h; }
-    if (y + h + 2 * B > fundo) novaPagina();
     const x = (A4.w - w) / 2;
     retangulo(x - B / 2, y + B / 2, w + B, h + B, { traco: AMARELO, lw: B });
     imagem(im, x, y + B, w, h);
     pg.temTela = true;
-    y += h + 2 * B + 10;
+    naPagina++;
+    y += h + 2 * B + GAP;
   }
   // Fotos que não couberam: no fim, em páginas próprias (o leitor do site pula estas páginas)
   const paginaDeFotos = () => {
