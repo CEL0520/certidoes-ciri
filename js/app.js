@@ -1,6 +1,6 @@
-import * as N from './nucleo.js?v=0.9.4';
-import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.4';
-import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.4';
+import * as N from './nucleo.js';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js';
+import { montarPdfPrint, arquivosParaFotos } from './printpdf.js';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -577,7 +577,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.4', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Certidões CIRI",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Gera certidões de citação e intimação a partir dos prints de conversas de WhatsApp e e-mail. Funciona só neste computador.",
   "default_locale": "pt_BR",
   "icons": {
