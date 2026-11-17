@@ -114,12 +114,20 @@
       const linha = el.closest('[data-id]') || el;
       const id = linha.getAttribute('data-id') || (el.innerText || '').slice(0, 60);
       if (mensagensWa.has(id)) continue;
-      const pre = el.querySelector('[data-pre-plain-text]');
-      // texto da própria mensagem (sem a mensagem citada, que fica em outro bloco)
+      // a mensagem citada (resposta) fica num bloco clicável com o seu próprio data-pre-plain-text:
+      // usa só o bloco da própria mensagem
+      const citada = (x) => { const q = x.closest('[role="button"], [aria-label*="itad"], [aria-label*="uot"], .quoted-mention, [data-testid*="quoted"]'); return !!q && q !== el && el.contains(q); };
+      const pres = [...el.querySelectorAll('[data-pre-plain-text]')];
+      const pre = pres.find((x) => !citada(x)) || null;
       let texto = '';
-      const sel = pre && [...pre.querySelectorAll('span.selectable-text')].filter((x) => !x.closest('[aria-label*="uot"], .quoted-mention, [data-testid*="quoted"]'));
+      const sel = pre && [...pre.querySelectorAll('span.selectable-text')].filter((x) => !citada(x));
       if (sel && sel.length) texto = sel.map((x) => x.innerText).join(' ');
       else if (pre) texto = pre.innerText;
+      else { // sem o atributo (mensagens longas, com emojis, encaminhadas): texto visível sem a hora
+        const copia = el.cloneNode(true);
+        copia.querySelectorAll('[role="button"]').forEach((x) => x.remove());
+        texto = (copia.innerText || '').replace(/\n?\s*(Editada\s*)?\d{1,2}:\d{2}\s*$/i, '').replace(/\bLer mais\b/i, '');
+      }
       const temImagem = [...el.querySelectorAll('img')].some((im) => im.getBoundingClientRect().width > 90 && /^blob:|^data:image/.test(im.src || ''));
       if (temImagem) texto = ('[imagem enviada] ' + texto).trim();
       if (/\.(pdf|jpe?g|png|docx?)\b/i.test(el.innerText || '') && !texto.includes('[arquivo]')) texto = ('[arquivo] ' + texto).trim();
@@ -177,7 +185,7 @@
     : 'O telefone não aparece na tela: abra o painel de dados do contato e leia de novo, ou preencha o telefone.';
   if (ehWhats && RE_TEL.test(nome)) { telefones.unshift(nome.match(RE_TEL)[0]); nome = ''; avisoTelefone = ''; }
   const dados = {
-    tipo: 'ciri-conversa', versao: 1, botao: 4,
+    tipo: 'ciri-conversa', versao: 1, botao: 5,
     origem: location.host, titulo: document.title,
     largura: pagina ? window.innerWidth : caixa.clientWidth,
     linhas: lista, telefones, nome, avisoTelefone,

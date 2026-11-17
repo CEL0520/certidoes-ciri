@@ -1,8 +1,9 @@
 {
-  "versao": "0.9.4",
+  "versao": "0.9.5",
   "data": "17/11/2026",
   "novidades": [
-    "aviso quando o botão Ler conversa da barra de favoritos está desatualizado (arraste de novo)",
-    "PDF do print do WhatsApp Web"
+    "botão Ler conversa novo: apague o antigo da barra de favoritos e arraste de novo",
+    "WhatsApp Web: respostas a mensagens e mensagens longas com emojis lidas corretamente",
+    "\"Fala não\" reconhecido como terceiro"
   ]
 }
