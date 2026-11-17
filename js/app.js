@@ -1,5 +1,6 @@
-import * as N from './nucleo.js?v=0.9.2';
-import { analisarArquivo, ocrInstalado, desenharPrint } from './leitura.js?v=0.9.2';
+import * as N from './nucleo.js?v=0.9.3';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.3';
+import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.3';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -82,6 +83,7 @@ function desenharFontes() {
 }
 $('adicionarConversa').onclick = () => { estado.adicionando = true; desenharFontes(); };
 $('novaCertidao').onclick = () => {
+  estado.print = null; mostrarPrint();
   estado.fontes = []; estado.adicionando = false; estado.atoConfirmado = false; estado.contatos = [];
   aposAnalise();
 };
@@ -535,6 +537,10 @@ function receberConversa(d) {
     if (d.avisoTelefone) { f.avisos = f.avisos.filter((a) => !/telefone não aparece/.test(a)); f.avisos.unshift(d.avisoTelefone); }
     fonte = { tipo: 'conversa', f, msgs, meta: {} };
   }
+  if (d.print && d.print.telas && d.print.telas.length) {
+    estado.print = { cab: d.print.cab || {}, telas: d.print.telas, fotos: (d.print.fotos || []).map((f) => ({ ...f, auto: true })) };
+    mostrarPrint();
+  }
   fonte.arquivo = `Conversa lida – ${d.origem}`;
   fonte.lida = d;
   fonte.ativa = true;
@@ -568,7 +574,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.2', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.3', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -581,10 +587,76 @@ function el_click_guard() {
 
 if (location.hash === '#leitor') progresso('Recebendo a conversa lida…');
 
+// ---------- PDF do print (WhatsApp Web) ----------
+function mostrarPrint() {
+  const p = estado.print;
+  $('secPrint').hidden = !p;
+  if (!p) return;
+  const c = p.cab;
+  $('printResumo').textContent = `${p.telas.length} tela(s) capturada(s)${c.telefone ? ' · ' + c.telefone : ''}${c.nomeWhats ? ' · ' + c.nomeWhats : ''}${c.processo ? ' · processo ' + c.processo : ''}`
+    + (c.painel ? '' : ' — o painel "Dados do contato" estava fechado; abra-o e capture de novo se precisar da foto de perfil e do telefone.');
+  const box = $('printFotos');
+  box.replaceChildren(...p.fotos.map((f, i) => {
+    const d = document.createElement('figure');
+    const im = document.createElement('img'); im.src = f.src; im.alt = 'foto ' + (i + 1);
+    const cap = document.createElement('figcaption'); cap.textContent = (f.auto ? 'da conversa' : 'arrastada') + (f.legenda ? ' · ' + f.legenda : '');
+    const x = document.createElement('button'); x.textContent = '×'; x.title = 'Tirar esta foto do PDF';
+    x.onclick = () => { p.fotos.splice(i, 1); mostrarPrint(); };
+    d.append(im, cap, x);
+    return d;
+  }));
+  $('printSemFotos').hidden = p.fotos.length > 0;
+}
+async function receberFotosPrint(arquivos) {
+  if (!estado.print || !arquivos.length) return;
+  $('printEstado').textContent = 'Lendo os arquivos…';
+  try { estado.print.fotos.push(...await arquivosParaFotos(arquivos, pdfjsLib)); }
+  catch (e) { alert('Não foi possível ler um dos arquivos: ' + (e.message || e)); }
+  $('printEstado').textContent = '';
+  mostrarPrint();
+}
+{
+  const z = $('printZona');
+  z.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); z.classList.add('sobre'); });
+  z.addEventListener('dragleave', () => z.classList.remove('sobre'));
+  z.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); z.classList.remove('sobre'); receberFotosPrint([...e.dataTransfer.files]); });
+  $('printArquivos').addEventListener('change', (e) => { receberFotosPrint([...e.target.files]); e.target.value = ''; });
+}
+$('printBaixar').onclick = async () => {
+  const p = estado.print;
+  if (!p) return;
+  const b = $('printBaixar');
+  b.disabled = true;
+  try {
+    const blob = await montarPdfPrint(p, (t) => { $('printEstado').textContent = t; });
+    const nomeParte = (($('nomes') && $('nomes').value) || p.cab.nomeWhats || p.cab.nome || '').split('\n')[0].replace(/^~\s*/, '').trim();
+    const nome = [p.cab.processo, nomeParte.toUpperCase(), 'print WhatsApp'].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, ' ');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nome + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    $('printEstado').textContent = 'PDF baixado: ' + a.download;
+  } catch (e) {
+    $('printEstado').textContent = 'Erro ao montar o PDF: ' + (e.message || e);
+  }
+  b.disabled = false;
+};
+// Extensão: a conversa lida chega pelo serviço da extensão
+if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#leitor') {
+  const api = typeof browser !== 'undefined' ? browser : chrome;
+  api.runtime.sendMessage({ tipo: 'ciri-pegar' }).then((d) => {
+    if (!d) { progresso(''); return; }
+    if (d.id) estado.recebidos.add(d.id);
+    receberConversa(d);
+  }, () => progresso(''));
+}
+
+
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.2';
+export const VERSAO = '0.9.3';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }

@@ -1,8 +1,8 @@
 {
-  "versao": "0.9.2",
-  "data": "13/11/2026",
+  "versao": "0.9.3",
+  "data": "17/11/2026",
   "novidades": [
-    "corrigido: \"Mensagem apagada\" interrompia a leitura da conversa (print manual e botão Ler conversa)",
-    "CPF enviado depois de mensagem apagada agora é reconhecido"
+    "PDF do print do WhatsApp Web: captura a conversa e os dados do contato, com as fotos da parte",
+    "fotos ou PDFs enviados pela parte podem ser arrastados para o PDF do print"
   ]
 }

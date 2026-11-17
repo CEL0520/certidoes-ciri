@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Certidões CIRI</title>
-<link rel="stylesheet" href="estilo.css?v=0.9.2">
+<link rel="stylesheet" href="estilo.css?v=0.9.3">
 <link rel="icon" href="icones/32.png">
 </head>
 <body>
@@ -50,6 +50,17 @@
       <button class="sec" id="novaCertidao">Começar nova certidão</button>
       <span id="esperaConversa" class="espera" hidden>Abra a outra conversa e clique em <b>Ler conversa</b>; ela entra nesta certidão. Ou arraste o PDF aqui.</span>
     </div>
+    <div id="secPrint" class="print-pdf" hidden>
+      <h3>PDF do print da conversa</h3>
+      <p id="printResumo" class="print-resumo"></p>
+      <div id="printFotos" class="print-fotos"></div>
+      <p id="printSemFotos" class="print-resumo">Nenhuma foto da parte foi encontrada na conversa.</p>
+      <label id="printZona" class="zona zona-mini" tabindex="0">
+        <input type="file" id="printArquivos" accept=".pdf,image/*" multiple hidden>
+        Arraste aqui <b>fotos ou PDFs enviados pela parte</b> (documento, selfie) — entram no PDF do print, no espaço livre ou no fim
+      </label>
+      <div class="print-acoes"><button id="printBaixar">Baixar PDF do print</button> <span id="printEstado" class="print-resumo"></span></div>
+    </div>
     <details id="secLeitor" class="leitor">
       <summary>Ler a conversa direto do chat ou do e-mail, sem print</summary>
       <ol>
@@ -57,6 +68,7 @@
         <li>Arraste este botão para a barra: <a id="botaoLeitor" class="botao-leitor" href="#">📋 Ler conversa</a></li>
         <li>Abra a conversa com a parte (painel do chat, WhatsApp Web ou e-mail) e clique em <b>Ler conversa</b> na barra de favoritos.</li>
         <li>O gerador abre numa aba ao lado, já com a certidão.</li>
+        <li>No WhatsApp Web, o aviso também oferece <b>Gerar PDF do print</b>: escolha <b>Esta aba</b> quando o navegador perguntar. Abra antes os <b>dados do contato</b> (clique no nome no topo), para o telefone e a foto de perfil saírem no print.</li>
       </ol>
       <small>A leitura acontece no seu navegador: a conversa passa de uma aba para a outra, sem ir para a internet.</small>
     </details>
@@ -153,7 +165,7 @@
   </div>
 </main>
 
-<footer class="rodape">Versão <span id="versaoAtual">0.9.2</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
-<script type="module" src="js/app.js?v=0.9.2"></script>
+<footer class="rodape">Versão <span id="versaoAtual">0.9.3</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.9.3"></script>
 </body>
 </html>

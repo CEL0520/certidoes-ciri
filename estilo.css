@@ -216,3 +216,15 @@ body.com-print main.lado-a-lado .coluna { height: 100%; overflow-y: auto; paddin
 .nova-versao[hidden] { display: none; }
 .nova-versao button { background: #fff; color: var(--marca); }
 .nova-versao button.sec { background: transparent; color: #fff; border: 1px solid #fff9; }
+
+/* PDF do print */
+.print-pdf { margin-top: 14px; padding: 14px 16px; border: 1px solid #e3d7a8; background: #fffbea; border-radius: 10px; }
+.print-pdf h3 { margin: 0 0 6px; font-size: 16px; color: #1f3a5f; }
+.print-resumo { font-size: 13px; color: #55606e; margin: 4px 0; }
+.print-fotos { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+.print-fotos figure { position: relative; margin: 0; width: 120px; }
+.print-fotos img { width: 120px; height: 90px; object-fit: cover; border: 1px solid #ccc; border-radius: 6px; display: block; }
+.print-fotos figcaption { font-size: 11px; color: #55606e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.print-fotos button { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; border-radius: 11px; line-height: 20px; font-size: 15px; }
+.zona.zona-mini { padding: 12px; font-size: 13px; margin: 8px 0; }
+.print-acoes { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

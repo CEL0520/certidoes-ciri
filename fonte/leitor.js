@@ -4,13 +4,18 @@
 // Não envia nada para a internet: os dados passam de uma aba para outra do navegador.
 (async () => {
   const SITE = '__SITE__';
-  const ORIGEM = new URL(SITE).origin;
+  // Na extensão (script injetado pelo botão da extensão) a entrega e as fotos da tela passam pela extensão
+  const EXT = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id ? chrome : null;
+  const ORIGEM = EXT ? '' : new URL(SITE).origin;
+  if (window.__ciriLendo) return;
+  window.__ciriLendo = true;
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // Aviso flutuante na página da conversa
   const aviso = document.createElement('div');
   aviso.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;background:#1f3a5f;color:#fff;font:14px Segoe UI,Arial,sans-serif;padding:10px 14px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);border-bottom:3px solid #b8860b;max-width:320px';
   const avisar = (t) => { aviso.textContent = 'Certidões CIRI: ' + t; };
+  const fim = () => { aviso.remove(); window.__ciriLendo = false; };
   document.body.appendChild(aviso);
   avisar('procurando a conversa…');
 
@@ -189,31 +194,161 @@
   aviso.style.cursor = 'default';
   const titulo = document.createElement('div');
   titulo.textContent = `Certidões CIRI: conversa lida (${msgsParte} trechos).`;
+  const estilo = 'margin:8px 8px 0 0;font:600 14px Segoe UI,Arial,sans-serif;color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer';
   const botao = document.createElement('button');
   botao.textContent = 'Abrir a certidão';
-  botao.style.cssText = 'margin-top:8px;font:600 14px Segoe UI,Arial,sans-serif;background:#b8860b;color:#fff;border:0;border-radius:6px;padding:7px 14px;cursor:pointer';
+  botao.style.cssText = estilo + ';background:#b8860b';
+  const botaoPrint = document.createElement('button');
+  botaoPrint.textContent = 'Gerar PDF do print';
+  botaoPrint.title = 'Fotografa a conversa e os dados do contato, rolando do início ao fim, e monta o PDF no gerador';
+  botaoPrint.style.cssText = estilo + ';background:#2f5d8f;border:1px solid #fff6';
   const fechar = document.createElement('button');
   fechar.textContent = 'Cancelar';
-  fechar.style.cssText = 'margin:8px 0 0 8px;font:13px Segoe UI,Arial,sans-serif;background:transparent;color:#fff;border:1px solid #fff8;border-radius:6px;padding:6px 10px;cursor:pointer';
-  fechar.onclick = () => aviso.remove();
-  aviso.append(titulo, botao, fechar);
+  fechar.style.cssText = 'margin:8px 0 0 0;font:13px Segoe UI,Arial,sans-serif;background:transparent;color:#fff;border:1px solid #fff8;border-radius:6px;padding:6px 10px;cursor:pointer';
+  fechar.onclick = fim;
+  aviso.append(titulo, botao);
+  if (ehWhats) aviso.append(botaoPrint);
+  aviso.append(fechar);
+
+  // ---------- PDF do print (WhatsApp Web) ----------
+  // Fotografa a área da conversa + painel "Dados do contato" (sem a lista de conversas, à esquerda),
+  // rolando do início ao fim. Cada tela repete um trecho do fim da anterior.
+  const RE_PROC = /\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/;
+  const areaDoPrint = () => {
+    const main = document.querySelector('#main') || caixa;
+    const rm = main.getBoundingClientRect();
+    let up = main;
+    while (up.parentElement && up.parentElement !== document.body && up.parentElement.getBoundingClientRect().left >= rm.left - 2) up = up.parentElement;
+    let direita = Math.max(rm.right, up.getBoundingClientRect().right);
+    // painel de dados do contato aberto à direita da conversa
+    let painel = null;
+    if (rm.right < innerWidth - 60) {
+      let el = document.elementFromPoint(Math.min(innerWidth - 5, rm.right + 40), innerHeight * 0.4);
+      while (el && el !== document.body && el.getBoundingClientRect().height < innerHeight * 0.7) el = el.parentElement;
+      if (el && el !== document.body && el.getBoundingClientRect().left >= rm.right - 4) { painel = el; direita = Math.max(direita, el.getBoundingClientRect().right); }
+    }
+    const x = Math.max(0, rm.left), y = Math.max(0, Math.min(rm.top, 0));
+    return { x, y, w: Math.min(innerWidth, direita) - x, h: innerHeight - y, painel };
+  };
+  const nomeNoWhats = (painel) => {
+    if (!painel) return '';
+    const w = document.createTreeWalker(painel, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode())) { const t = (n.textContent || '').trim(); if (/^~\s?\S/.test(t) && t.length < 60) return t; }
+    return '';
+  };
+  const telaParaJpeg = (fonte, fw, area) => {
+    const s = fw / innerWidth;
+    const c = document.createElement('canvas');
+    const esc = Math.min(1, 1600 / (area.w * s));
+    c.width = Math.round(area.w * s * esc); c.height = Math.round(area.h * s * esc);
+    c.getContext('2d').drawImage(fonte, area.x * s, area.y * s, area.w * s, area.h * s, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.86);
+  };
+  const fotosVistas = new Map();
+  const coletarFotos = () => {
+    for (const im of document.querySelectorAll('#main .message-in img')) {
+      const r = im.getBoundingClientRect();
+      if (r.width < 110 || r.height < 80 || !im.naturalWidth || im.naturalWidth < 160) continue;
+      if (!/^(blob:|data:image)/.test(im.src || '') || fotosVistas.has(im.src)) continue;
+      try {
+        const k = Math.min(1, 1800 / Math.max(im.naturalWidth, im.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+        const msg = im.closest('.message-in');
+        const pre = msg && msg.querySelector('[data-pre-plain-text]');
+        const hm = ((msg && msg.innerText) || '').match(/(\d{1,2}:\d{2})\s*$/m);
+        fotosVistas.set(im.src, { src: c.toDataURL('image/jpeg', 0.88), legenda: hm ? hm[1].replace(':', 'h') : '', pre: pre ? pre.getAttribute('data-pre-plain-text') : '' });
+      } catch (e) { fotosVistas.set(im.src, null); /* imagem protegida: fica de fora */ }
+    }
+  };
+  // Fonte das fotos da tela: extensão (sem pedir nada) ou compartilhamento da aba (botão da barra)
+  const abrirCamera = async () => {
+    if (EXT) {
+      let ultima = 0;
+      return {
+        foto: async () => {
+          const falta = 600 - (Date.now() - ultima); if (falta > 0) await espera(falta); // limite do navegador: 2 por segundo
+          ultima = Date.now();
+          const url = await EXT.runtime.sendMessage({ tipo: 'ciri-foto-tela' });
+          if (!url || url.erro) throw new Error((url && url.erro) || 'sem imagem');
+          const img = new Image(); img.src = url; await img.decode();
+          return { fonte: img, largura: img.naturalWidth };
+        },
+        fechar: () => {},
+      };
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('Este navegador não permite capturar a tela pelo botão. Use a extensão.');
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { displaySurface: 'browser', frameRate: 5 }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude' });
+    const trilha = stream.getVideoTracks()[0];
+    const fechar = () => stream.getTracks().forEach((t) => t.stop());
+    if (trilha.getSettings().displaySurface && trilha.getSettings().displaySurface !== 'browser') { fechar(); throw new Error('Escolha a opção "Esta aba" (não a tela inteira nem uma janela).'); }
+    const video = document.createElement('video');
+    video.muted = true; video.srcObject = stream; await video.play();
+    await espera(400);
+    return { foto: async () => { await espera(250); return { fonte: video, largura: video.videoWidth }; }, fechar };
+  };
+  botaoPrint.onclick = async () => {
+    botaoPrint.disabled = true; botao.disabled = true;
+    let camera;
+    try { camera = await abrirCamera(); } catch (e) {
+      titulo.textContent = 'Certidões CIRI: ' + (e && e.name === 'NotAllowedError' ? 'captura cancelada.' : (e.message || 'não foi possível capturar a tela.'));
+      botaoPrint.disabled = false; botao.disabled = false; return;
+    }
+    const area = areaDoPrint();
+    const telas = [];
+    aviso.style.visibility = 'hidden';
+    try {
+      caixa.scrollTop = 0; await espera(700);
+      for (let i = 0; i < 60; i++) {
+        coletarFotos();
+        await espera(350);
+        const f = await camera.foto();
+        telas.push(telaParaJpeg(f.fonte, f.largura, area));
+        if (caixa.scrollTop + caixa.clientHeight >= caixa.scrollHeight - 2) break;
+        caixa.scrollTop += Math.round(caixa.clientHeight * 0.82); // ~18% da tela anterior se repete
+        await espera(450);
+      }
+    } catch (e) {
+      titulo.textContent = 'Certidões CIRI: a captura parou (' + (e.message || e) + ').';
+    } finally { camera.fechar(); aviso.style.visibility = ''; }
+    const servidor = (dados.mensagens || []).filter((m) => m.lado === 'servidor').map((m) => m.texto).join('\n') + '\n' + dados.textoCaixa;
+    const proc = servidor.match(RE_PROC);
+    dados.print = {
+      telas,
+      fotos: [...fotosVistas.values()].filter(Boolean),
+      cab: { telefone: telefones[0] || '', nomeWhats: nomeNoWhats(area.painel), nome, processo: proc ? proc[0] : '', quando: new Date().toISOString(), painel: !!area.painel },
+    };
+    titulo.textContent = `Certidões CIRI: print pronto (${telas.length} telas${dados.print.fotos.length ? ', ' + dados.print.fotos.length + ' foto(s) da parte' : ''}).` + (area.painel ? '' : ' Dica: abra os dados do contato antes, para o telefone e a foto de perfil saírem no print.');
+    botao.textContent = 'Abrir a certidão e o PDF';
+    botao.disabled = false;
+    botaoPrint.remove();
+  };
 
   botao.onclick = async () => {
+    if (EXT) {
+      botao.disabled = true; botao.textContent = 'Enviando…';
+      try { await EXT.runtime.sendMessage({ tipo: 'ciri-entregar', dados }); fim(); }
+      catch (e) { titulo.textContent = 'Certidões CIRI: não foi possível abrir o gerador (' + (e.message || e) + ').'; botao.disabled = false; botao.textContent = 'Abrir a certidão'; }
+      return;
+    }
     const janela = window.open(SITE + '#leitor', 'certidoes-ciri');
     if (!janela) { titulo.textContent = 'Certidões CIRI: o navegador bloqueou a nova aba. Permita pop-ups para este site e clique de novo.'; return; }
+    const rotulo = botao.textContent;
     botao.disabled = true; botao.textContent = 'Enviando…';
     let entregue = false;
     const ouvir = (e) => {
       if (e.origin !== ORIGEM || !e.data || e.data.tipo !== 'ciri-recebido' || e.data.id !== dados.id) return;
       entregue = true;
       window.removeEventListener('message', ouvir);
-      aviso.remove();
+      fim();
     };
     window.addEventListener('message', ouvir);
     for (let i = 0; i < 75 && !entregue; i++) {
       try { janela.postMessage(dados, ORIGEM); } catch (e) { /* aba ainda carregando */ }
       await espera(400);
     }
-    if (!entregue) { titulo.textContent = 'Certidões CIRI: o gerador não respondeu. Clique de novo em Abrir a certidão.'; botao.disabled = false; botao.textContent = 'Abrir a certidão'; window.removeEventListener('message', ouvir); }
+    if (!entregue) { titulo.textContent = 'Certidões CIRI: o gerador não respondeu. Clique de novo em ' + rotulo + '.'; botao.disabled = false; botao.textContent = rotulo; window.removeEventListener('message', ouvir); }
   };
 })();

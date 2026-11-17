@@ -190,7 +190,8 @@ export function telasParaMensagens(telas, ano, opcoes = {}) {
       if (!texto || daBarra.has(l)) continue;
       // faixa da barra de tarefas do Windows, no pé dos prints de tela inteira
       if (tela.modo === 'livre' && tela.altura && l.y0 / tela.altura > 0.95 && !lerCarimbo(texto, ano, hojeTela)) continue;
-      if (temPos && tela.altura && l.y1 / tela.altura < 0.05) { // cabeçalho da conversa (nome do contato)
+      const cabWhats = temPos && tela.altura && l.y1 / tela.altura < 0.1 && l.x0 / tela.largura < 0.2 && /^\W{0,3}[A-Z]?\s*\+\s?\d{2}\s?\d{2}\s?9?\d{4}-?\d{4}\s*$/.test(texto); // WhatsApp Web: telefone no topo
+      if (cabWhats || (temPos && tela.altura && l.y1 / tela.altura < 0.05)) { // cabeçalho da conversa (nome do contato)
         if (!titulo && l.x0 / tela.largura < 0.2 && /[a-zà-ú]{3}/i.test(texto)) titulo = texto.replace(/^[^A-Za-zÀ-ú]+/, '');
         continue;
       }
@@ -1020,7 +1021,8 @@ export function lerMetaPdf(texto) {
   if (cap) meta.dataCaptura = { dia: +cap[1], mes: +cap[2], ano: +cap[3] };
   const imgs = texto.match(/Imagem enviada por [^\n]*?(\d{1,2}):(\d{2})/g);
   const docs = texto.match(/Documento enviado pela parte\s*:/gi); // arquivo (foto/PDF do documento) anexado pela extensão
-  meta.imagensParte = (imgs ? imgs.length : 0) + (docs ? docs.length : 0);
+  const fotosPrint = texto.match(/Foto\/documento enviado pela parte \(\d+\)/g); // PDF do print gerado por este site
+  meta.imagensParte = (imgs ? imgs.length : 0) + (docs ? docs.length : 0) + (fotosPrint ? new Set(fotosPrint).size : 0);
   meta.ehEmail = !rod && /<[^>\s]+@[^>\s]+>/.test(texto) && /\d{1,2} de [a-zç]+ de \d{4},? (?:[àa]s )?\d{1,2}:\d{2}/i.test(texto);
   return meta;
 }
