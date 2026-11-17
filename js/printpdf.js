@@ -32,6 +32,17 @@ async function carregarImagem(src) {
 }
 // Normaliza qualquer imagem para JPEG (o PDF guarda o JPEG como está)
 async function paraJpeg(src, maxLado = 1800) {
+  // JPEG já no tamanho certo (telas capturadas): usa os bytes como estão, sem recomprimir
+  if (/^blob:/.test(src)) {
+    const bl = await (await fetch(src)).blob();
+    if (bl.type === 'image/jpeg') {
+      const bm = await createImageBitmap(bl);
+      const ok = Math.max(bm.width, bm.height) <= maxLado;
+      const dims = { w: bm.width, h: bm.height };
+      bm.close();
+      if (ok) return { ...dims, bytes: new Uint8Array(await bl.arrayBuffer()) };
+    }
+  }
   const img = await carregarImagem(src);
   const k = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight));
   const c = document.createElement('canvas');
@@ -162,7 +173,7 @@ export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso
     texto(`Gerado pelo site Certidões CIRI em ${dataHora(cab.quando)}`, M, A4.h - M + 4, 7.5, false, [0.45, 0.45, 0.45]);
   });
 
-  // Fotos: entram no espaço livre que sobrar numa página (ou no fim)
+  // Fotos: sempre no fim do PDF, depois de todas as telas
   const fila = [];
   for (let i = 0; i < fotos.length; i++) {
     aviso && aviso(`Preparando as fotos (${i + 1} de ${fotos.length})…`);
@@ -203,9 +214,6 @@ export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso
     imagem(im, x, y + B, w, h);
     pg.temTela = true;
     y += h + 2 * B + 10;
-    // fim da página (ou última tela): o espaço que sobrou recebe fotos
-    const proxH = i + 1 < telas.length ? h + 2 * B : Infinity;
-    if (y + proxH > fundo) encaixarFotos(220);
   }
   // Fotos que não couberam: no fim, em páginas próprias (o leitor do site pula estas páginas)
   const paginaDeFotos = () => {
@@ -213,6 +221,7 @@ export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso
     centro('Fotos e documentos enviados pela parte', y + 11, 10.5, true, [0.12, 0.23, 0.37]);
     y += 22;
   };
+  if (fila.length) paginaDeFotos(); // fotos sempre no fim, em página própria
   while (fila.length) {
     if (fundo - y < 220) paginaDeFotos();
     const antes = fila.length;

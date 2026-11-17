@@ -1,9 +1,10 @@
 {
-  "versao": "0.9.5",
+  "versao": "0.9.6",
   "data": "17/11/2026",
   "novidades": [
-    "botão Ler conversa novo: apague o antigo da barra de favoritos e arraste de novo",
-    "WhatsApp Web: respostas a mensagens e mensagens longas com emojis lidas corretamente",
-    "\"Fala não\" reconhecido como terceiro"
+    "PDF do print: envio ao gerador mais rápido, botões Ver PDF e Baixar PDF",
+    "fotos sempre no fim do PDF",
+    "nome do arquivo: Abordador - 5059047-77 - Nome da Parte - Efetivada - data",
+    "arraste de novo o botão Ler conversa"
   ]
 }

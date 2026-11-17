@@ -185,7 +185,7 @@
     : 'O telefone não aparece na tela: abra o painel de dados do contato e leia de novo, ou preencha o telefone.';
   if (ehWhats && RE_TEL.test(nome)) { telefones.unshift(nome.match(RE_TEL)[0]); nome = ''; avisoTelefone = ''; }
   const dados = {
-    tipo: 'ciri-conversa', versao: 1, botao: 5,
+    tipo: 'ciri-conversa', versao: 1, botao: 6,
     origem: location.host, titulo: document.title,
     largura: pagina ? window.innerWidth : caixa.clientWidth,
     linhas: lista, telefones, nome, avisoTelefone,
@@ -251,7 +251,7 @@
     const esc = Math.min(1, 1600 / (area.w * s));
     c.width = Math.round(area.w * s * esc); c.height = Math.round(area.h * s * esc);
     c.getContext('2d').drawImage(fonte, area.x * s, area.y * s, area.w * s, area.h * s, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.86);
+    return new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.85));
   };
   const fotosVistas = new Map();
   const coletarFotos = () => {
@@ -267,7 +267,7 @@
         const msg = im.closest('.message-in');
         const pre = msg && msg.querySelector('[data-pre-plain-text]');
         const hm = ((msg && msg.innerText) || '').match(/(\d{1,2}:\d{2})\s*$/m);
-        fotosVistas.set(im.src, { src: c.toDataURL('image/jpeg', 0.88), legenda: hm ? hm[1].replace(':', 'h') : '', pre: pre ? pre.getAttribute('data-pre-plain-text') : '' });
+        fotosVistas.set(im.src, { src: c.toDataURL('image/jpeg', 0.9), legenda: hm ? hm[1].replace(':', 'h') : '', pre: pre ? pre.getAttribute('data-pre-plain-text') : '' });
       } catch (e) { fotosVistas.set(im.src, null); /* imagem protegida: fica de fora */ }
     }
   };
@@ -295,7 +295,7 @@
     const video = document.createElement('video');
     video.muted = true; video.srcObject = stream; await video.play();
     await espera(400);
-    return { foto: async () => { await espera(250); return { fonte: video, largura: video.videoWidth }; }, fechar };
+    return { foto: async () => { await new Promise((ok) => { setTimeout(ok, 350); if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => setTimeout(ok, 30)); }); return { fonte: video, largura: video.videoWidth }; }, fechar };
   };
   botaoPrint.onclick = async () => {
     botaoPrint.disabled = true; botao.disabled = true;
@@ -306,21 +306,24 @@
     }
     const area = areaDoPrint();
     const telas = [];
+    // durante a captura o aviso some da tela (senão sairia no print); o título da aba mostra o andamento
+    const tituloAba = document.title;
+    const avisarCaptura = (t) => { document.title = 'Certidões CIRI: ' + t; };
     aviso.style.visibility = 'hidden';
     try {
       caixa.scrollTop = 0; await espera(700);
       for (let i = 0; i < 60; i++) {
         coletarFotos();
-        await espera(350);
         const f = await camera.foto();
-        telas.push(telaParaJpeg(f.fonte, f.largura, area));
+        telas.push(await telaParaJpeg(f.fonte, f.largura, area));
         if (caixa.scrollTop + caixa.clientHeight >= caixa.scrollHeight - 2) break;
         caixa.scrollTop += Math.round(caixa.clientHeight * 0.82); // ~18% da tela anterior se repete
-        await espera(450);
+        await espera(300);
+        avisarCaptura(`fotografando a conversa (${telas.length} telas)…`);
       }
     } catch (e) {
       titulo.textContent = 'Certidões CIRI: a captura parou (' + (e.message || e) + ').';
-    } finally { camera.fechar(); aviso.style.visibility = ''; }
+    } finally { camera.fechar(); aviso.style.visibility = ''; document.title = tituloAba; }
     const servidor = (dados.mensagens || []).filter((m) => m.lado === 'servidor').map((m) => m.texto).join('\n') + '\n' + dados.textoCaixa;
     const proc = servidor.match(RE_PROC);
     dados.print = {
@@ -337,7 +340,11 @@
   botao.onclick = async () => {
     if (EXT) {
       botao.disabled = true; botao.textContent = 'Enviando…';
-      try { await EXT.runtime.sendMessage({ tipo: 'ciri-entregar', dados }); fim(); }
+      try {
+        const paraUrl = (b) => (b instanceof Blob ? new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(b); }) : b);
+        if (dados.print) dados.print.telas = await Promise.all(dados.print.telas.map(paraUrl));
+        await EXT.runtime.sendMessage({ tipo: 'ciri-entregar', dados }); fim();
+      }
       catch (e) { titulo.textContent = 'Certidões CIRI: não foi possível abrir o gerador (' + (e.message || e) + ').'; botao.disabled = false; botao.textContent = 'Abrir a certidão'; }
       return;
     }
@@ -345,18 +352,25 @@
     if (!janela) { titulo.textContent = 'Certidões CIRI: o navegador bloqueou a nova aba. Permita pop-ups para este site e clique de novo.'; return; }
     const rotulo = botao.textContent;
     botao.disabled = true; botao.textContent = 'Enviando…';
-    let entregue = false;
+    // 1) espera o gerador abrir (mensagem pequena); 2) envia tudo uma única vez; 3) espera a confirmação
+    let pronto = false, entregue = false;
     const ouvir = (e) => {
-      if (e.origin !== ORIGEM || !e.data || e.data.tipo !== 'ciri-recebido' || e.data.id !== dados.id) return;
-      entregue = true;
-      window.removeEventListener('message', ouvir);
-      fim();
+      if (e.origin !== ORIGEM || !e.data) return;
+      if (e.data.tipo === 'ciri-pronto') pronto = true;
+      if (e.data.tipo === 'ciri-recebido' && e.data.id === dados.id) entregue = true;
     };
     window.addEventListener('message', ouvir);
-    for (let i = 0; i < 75 && !entregue; i++) {
-      try { janela.postMessage(dados, ORIGEM); } catch (e) { /* aba ainda carregando */ }
-      await espera(400);
+    for (let i = 0; i < 150 && !pronto; i++) {
+      try { janela.postMessage({ tipo: 'ciri-ola' }, ORIGEM); } catch (e) { /* aba ainda carregando */ }
+      await espera(200);
     }
-    if (!entregue) { titulo.textContent = 'Certidões CIRI: o gerador não respondeu. Clique de novo em ' + rotulo + '.'; botao.disabled = false; botao.textContent = rotulo; window.removeEventListener('message', ouvir); }
+    if (pronto) {
+      try { janela.postMessage(dados, ORIGEM); } catch (e) { /* aba fechada */ }
+      for (let i = 0; i < 300 && !entregue; i++) await espera(200);
+    }
+    window.removeEventListener('message', ouvir);
+    if (entregue) { fim(); return; }
+    titulo.textContent = 'Certidões CIRI: o gerador não respondeu. Veja se a aba do gerador abriu e clique de novo em ' + rotulo + '.';
+    botao.disabled = false; botao.textContent = rotulo;
   };
 })();

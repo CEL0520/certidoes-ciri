@@ -1,6 +1,6 @@
-import * as N from './nucleo.js?v=0.9.5';
-import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.5';
-import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.5';
+import * as N from './nucleo.js?v=0.9.6';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.6';
+import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.6';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -538,10 +538,12 @@ function receberConversa(d) {
     fonte = { tipo: 'conversa', f, msgs, meta: {} };
   }
   if (d.print && d.print.telas && d.print.telas.length) {
-    estado.print = { cab: d.print.cab || {}, telas: d.print.telas, fotos: (d.print.fotos || []).map((f) => ({ ...f, auto: true })) };
+    const url = (x) => (x instanceof Blob ? URL.createObjectURL(x) : x);
+    estado.print = { cab: d.print.cab || {}, telas: d.print.telas.map(url), fotos: (d.print.fotos || []).map((f) => ({ ...f, src: url(f.src), auto: true })) };
     mostrarPrint();
+    prepararPdf();
   }
-  if (!/^(chrome|moz)-extension:/.test(location.protocol) && !(d.botao >= 5) && fonte.f && fonte.f.avisos) {
+  if (!/^(chrome|moz)-extension:/.test(location.protocol) && !(d.botao >= 6) && fonte.f && fonte.f.avisos) {
     fonte.f.avisos.unshift('O botão "Ler conversa" da sua barra de favoritos é de uma versão antiga (sem "Gerar PDF do print"). Apague-o e arraste de novo o botão dourado deste site para a barra.');
   }
   fonte.arquivo = `Conversa lida – ${d.origem}`;
@@ -563,6 +565,7 @@ function receberConversa(d) {
 
 window.addEventListener('message', (e) => {
   const d = e.data;
+  if (d && d.tipo === 'ciri-ola' && e.source) { try { e.source.postMessage({ tipo: 'ciri-pronto' }, e.origin); } catch { /* aba fechada */ } return; }
   if (!d || d.tipo !== 'ciri-conversa' || !e.source) return;
   // Só aceita da aba que abriu esta (a da conversa) — nunca de páginas embutidas
   if (window.opener && e.source !== window.opener && !estado.adicionando) return;
@@ -577,7 +580,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.5', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.6', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -604,16 +607,17 @@ function mostrarPrint() {
     const im = document.createElement('img'); im.src = f.src; im.alt = 'foto ' + (i + 1);
     const cap = document.createElement('figcaption'); cap.textContent = (f.auto ? 'da conversa' : 'arrastada') + (f.legenda ? ' · ' + f.legenda : '');
     const x = document.createElement('button'); x.textContent = '×'; x.title = 'Tirar esta foto do PDF';
-    x.onclick = () => { p.fotos.splice(i, 1); mostrarPrint(); };
+    x.onclick = () => { p.fotos.splice(i, 1); p.pdf = null; mostrarPrint(); };
     d.append(im, cap, x);
     return d;
   }));
   $('printSemFotos').hidden = p.fotos.length > 0;
+  setTimeout(atualizarNomePdf, 0);
 }
 async function receberFotosPrint(arquivos) {
   if (!estado.print || !arquivos.length) return;
   $('printEstado').textContent = 'Lendo os arquivos…';
-  try { estado.print.fotos.push(...await arquivosParaFotos(arquivos, pdfjsLib)); }
+  try { estado.print.fotos.push(...await arquivosParaFotos(arquivos, pdfjsLib)); estado.print.pdf = null; }
   catch (e) { alert('Não foi possível ler um dos arquivos: ' + (e.message || e)); }
   $('printEstado').textContent = '';
   mostrarPrint();
@@ -625,25 +629,78 @@ async function receberFotosPrint(arquivos) {
   z.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); z.classList.remove('sobre'); receberFotosPrint([...e.dataTransfer.files]); });
   $('printArquivos').addEventListener('change', (e) => { receberFotosPrint([...e.target.files]); e.target.value = ''; });
 }
+// O PDF é montado logo que a captura chega (e de novo se as fotos mudarem)
+async function prepararPdf() {
+  const p = estado.print;
+  if (!p) return null;
+  if (p.pdf) return p.pdf;
+  if (p.montando) return p.montando;
+  const btns = [$('printVer'), $('printBaixar')];
+  btns.forEach((b) => { b.disabled = true; });
+  p.montando = (async () => {
+    try {
+      const blob = await montarPdfPrint(p, (t) => { $('printEstado').textContent = t; });
+      if (estado.print !== p) return null;
+      p.pdf = { blob, url: URL.createObjectURL(blob), fotos: p.fotos.length };
+      $('printEstado').textContent = `PDF pronto (${Math.max(1, Math.round(blob.size / 1024))} KB).`;
+      return p.pdf;
+    } catch (e) {
+      $('printEstado').textContent = 'Erro ao montar o PDF: ' + (e.message || e);
+      return null;
+    } finally { p.montando = null; btns.forEach((b) => { b.disabled = false; }); }
+  })();
+  return p.montando;
+}
+// Nome do arquivo: "Abordador - 5059047-77 - Nome da Parte - Efetivada - 16.11.2026" (só iniciais maiúsculas)
+function nomeSugerido(p) {
+  const msgs = (estado.fontes.find((f) => f.ativa) || estado.fontes[0] || {}).msgs || [];
+  let abordador = '';
+  for (const m of msgs) {
+    if (m.lado !== 'servidor') continue;
+    const r = (m.texto || '').match(/meu nome [eé]\s+([A-Za-zÀ-ÿ]+)/i);
+    if (r) { abordador = r[1]; break; }
+  }
+  try { if (abordador) localStorage.setItem('ciri-abordador', abordador); else abordador = localStorage.getItem('ciri-abordador') || ''; } catch { /* sem armazenamento */ }
+  const proc = (p.cab.processo || '').match(/^(\d{7}-\d{2})/);
+  const nomeParte = (($('nomes') && $('nomes').value) || p.cab.nomeWhats || p.cab.nome || '').split('\n')[0].replace(/^~\s*/, '').trim();
+  const sit = ($('situacao') && $('situacao').value) || '';
+  const status = ehFrustrada(sit) ? 'Frustrada' : /EXPEDIDA|SEM_MANIF/.test(sit) ? 'Expedida' : sit ? 'Efetivada' : '';
+  const data = (($('data') && $('data').value) || '').replace(/\//g, '.');
+  return [abordador && N.nomeProprio(abordador), proc && proc[1], nomeParte && N.nomeProprio(nomeParte), status, data]
+    .filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, ' ');
+}
+function nomePdf(p) {
+  const campo = $('printNome');
+  const nome = (campo.value.trim() || nomeSugerido(p)).replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|]+/g, ' ');
+  return nome + '.pdf';
+}
+function atualizarNomePdf() {
+  if (!estado.print || estado.print.nomeEditado) return;
+  $('printNome').value = nomeSugerido(estado.print);
+}
+$('printNome').addEventListener('input', () => { if (estado.print) estado.print.nomeEditado = true; });
+$('secDados').addEventListener('input', () => setTimeout(atualizarNomePdf, 0));
+$('secDados').addEventListener('change', () => setTimeout(atualizarNomePdf, 0));
+document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('#secCertidao, #secDados')) setTimeout(atualizarNomePdf, 0); });
+$('printVer').onclick = async () => {
+  const p = estado.print;
+  if (!p) return;
+  if (p.pdf) { window.open(p.pdf.url, '_blank'); return; }
+  const aba = window.open('', '_blank'); // abre já (no clique), para o navegador não bloquear
+  if (aba) aba.document.write('<p style="font:16px Segoe UI,Arial;padding:20px">Montando o PDF do print…</p>');
+  const r = await prepararPdf();
+  if (r && aba) aba.location.href = r.url; else if (aba) aba.close();
+};
 $('printBaixar').onclick = async () => {
   const p = estado.print;
   if (!p) return;
-  const b = $('printBaixar');
-  b.disabled = true;
-  try {
-    const blob = await montarPdfPrint(p, (t) => { $('printEstado').textContent = t; });
-    const nomeParte = (($('nomes') && $('nomes').value) || p.cab.nomeWhats || p.cab.nome || '').split('\n')[0].replace(/^~\s*/, '').trim();
-    const nome = [p.cab.processo, nomeParte.toUpperCase(), 'print WhatsApp'].filter(Boolean).join(' - ').replace(/[\\/:*?"<>|]+/g, ' ');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = nome + '.pdf';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-    $('printEstado').textContent = 'PDF baixado: ' + a.download;
-  } catch (e) {
-    $('printEstado').textContent = 'Erro ao montar o PDF: ' + (e.message || e);
-  }
-  b.disabled = false;
+  const r = await prepararPdf();
+  if (!r) return;
+  const a = document.createElement('a');
+  a.href = r.url;
+  a.download = nomePdf(p);
+  document.body.appendChild(a); a.click(); a.remove();
+  $('printEstado').textContent = 'PDF baixado: ' + a.download;
 };
 // Extensão: a conversa lida chega pelo serviço da extensão
 if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#leitor') {
@@ -659,7 +716,7 @@ if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#le
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.5';
+export const VERSAO = '0.9.6';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }

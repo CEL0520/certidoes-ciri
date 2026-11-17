@@ -228,3 +228,6 @@ body.com-print main.lado-a-lado .coluna { height: 100%; overflow-y: auto; paddin
 .print-fotos button { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; border-radius: 11px; line-height: 20px; font-size: 15px; }
 .zona.zona-mini { padding: 12px; font-size: 13px; margin: 8px 0; }
 .print-acoes { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.print-nome { display: block; font-size: 13px; color: #55606e; margin: 6px 0 10px; }
+.print-nome input { width: 100%; box-sizing: border-box; margin-top: 4px; font-size: 14px; }
