@@ -1,9 +1,10 @@
 {
-  "versao": "0.9.7",
-  "data": "17/11/2026",
+  "versao": "0.9.8",
+  "data": "18/11/2026",
   "novidades": [
-    "PDF do print: duas telas por página, também na primeira (sem espaço em branco)",
-    "a última linha de cada tela abre a tela seguinte — arraste de novo o botão Ler conversa",
-    "botão Limpar print"
+    "PDF do print: várias conversas (outros números) num só PDF, com Adicionar outra conversa",
+    "juntar PDF de outro sistema no início ou no fim",
+    "moldura cinza; nome do destinatário no alto de cada página; telefone grifado acima de cada tela",
+    "fotos ampliadas, depois das conversas; PDF ajustado ao limite de 2 MB do Projudi"
   ]
 }

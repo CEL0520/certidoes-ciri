@@ -1,6 +1,6 @@
-import * as N from './nucleo.js?v=0.9.7';
-import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.7';
-import { montarPdfPrint, arquivosParaFotos } from './printpdf.js?v=0.9.7';
+import * as N from './nucleo.js?v=0.9.8';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.8';
+import { montarPdfPrint, arquivosParaFotos, pdfParaPaginas, LIMITE_PROJUDI } from './printpdf.js?v=0.9.8';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -539,9 +539,18 @@ function receberConversa(d) {
   }
   if (d.print && d.print.telas && d.print.telas.length) {
     const url = (x) => (x instanceof Blob ? URL.createObjectURL(x) : x);
-    estado.print = { cab: d.print.cab || {}, telas: d.print.telas.map(url), fotos: (d.print.fotos || []).map((f) => ({ ...f, src: url(f.src), auto: true })) };
+    const conversa = { cab: d.print.cab || {}, telas: d.print.telas.map(url) };
+    const fotos = (d.print.fotos || []).map((f) => ({ ...f, src: url(f.src), auto: true }));
+    if (estado.adicionando && estado.print) {
+      // "Adicionar outra conversa": outro número da mesma parte entra no mesmo PDF
+      estado.print.conversas.push(conversa);
+      estado.print.fotos.push(...fotos);
+      estado.print.pdf = null;
+    } else {
+      estado.print = { conversas: [conversa], fotos, anexos: [] };
+    }
     mostrarPrint();
-    prepararPdf();
+    setTimeout(prepararPdf, 300);
   }
   if (!/^(chrome|moz)-extension:/.test(location.protocol) && !(d.botao >= 7) && fonte.f && fonte.f.avisos) {
     fonte.f.avisos.unshift('O botão "Ler conversa" da sua barra de favoritos é de uma versão antiga (sem "Gerar PDF do print"). Apague-o e arraste de novo o botão dourado deste site para a barra.');
@@ -580,7 +589,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.7', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.9.8', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -598,9 +607,28 @@ function mostrarPrint() {
   const p = estado.print;
   $('secPrint').hidden = !p;
   if (!p) return;
-  const c = p.cab;
-  $('printResumo').textContent = `${p.telas.length} tela(s) capturada(s)${c.telefone ? ' · ' + c.telefone : ''}${c.nomeWhats ? ' · ' + c.nomeWhats : ''}${c.processo ? ' · processo ' + c.processo : ''}`
-    + (c.painel ? '' : ' — o painel "Dados do contato" estava fechado; abra-o e capture de novo se precisar da foto de perfil e do telefone.');
+  const item = (texto, aoRemover, extra) => {
+    const li = document.createElement('li');
+    const sp = document.createElement('span'); sp.textContent = texto;
+    li.append(sp);
+    if (extra) li.append(extra);
+    const x = document.createElement('button'); x.className = 'sec'; x.textContent = 'tirar'; x.onclick = aoRemover;
+    li.append(x);
+    return li;
+  };
+  const lista = $('printConversas');
+  lista.replaceChildren(...p.conversas.map((cv, i) => {
+    const c = cv.cab;
+    return item(`Conversa ${i + 1}: ${cv.telas.length} tela(s)${c.telefone ? ' · ' + c.telefone : ''}${c.nomeWhats ? ' · ' + c.nomeWhats : ''}${c.painel === false ? ' · painel do contato fechado' : ''}`,
+      () => { p.conversas.splice(i, 1); p.pdf = null; if (!p.conversas.length && !p.anexos.length) estado.print = null; mostrarPrint(); });
+  }));
+  $('printAnexos').replaceChildren(...p.anexos.map((a, i) => {
+    const sel = document.createElement('select');
+    sel.innerHTML = '<option value="inicio">no início</option><option value="fim">no fim</option>';
+    sel.value = a.posicao;
+    sel.onchange = () => { a.posicao = sel.value; p.pdf = null; prepararPdf(); };
+    return item(`Outro sistema: ${a.nome} (${a.paginas.length} pág.)`, () => { p.anexos.splice(i, 1); p.pdf = null; mostrarPrint(); }, sel);
+  }));
   const box = $('printFotos');
   box.replaceChildren(...p.fotos.map((f, i) => {
     const d = document.createElement('figure');
@@ -614,10 +642,24 @@ function mostrarPrint() {
   $('printSemFotos').hidden = p.fotos.length > 0;
   setTimeout(atualizarNomePdf, 0);
 }
+async function receberOutroSistema(arquivos) {
+  const pdfs = arquivos.filter((a) => /pdf$/i.test(a.type) || /\.pdf$/i.test(a.name));
+  if (!pdfs.length) return;
+  if (!estado.print) estado.print = { conversas: [], fotos: [], anexos: [] };
+  $('printEstado').textContent = 'Lendo o PDF de outro sistema…';
+  try {
+    for (const a of pdfs) estado.print.anexos.push({ nome: a.name, paginas: await pdfParaPaginas(a, pdfjsLib), posicao: $('printPosicao').value });
+    estado.print.pdf = null;
+  } catch (e) { alert('Não foi possível ler o PDF: ' + (e.message || e)); }
+  $('printEstado').textContent = '';
+  mostrarPrint();
+  prepararPdf();
+}
+$('printOutro').addEventListener('change', (e) => { receberOutroSistema([...e.target.files]); e.target.value = ''; });
 async function receberFotosPrint(arquivos) {
   if (!estado.print || !arquivos.length) return;
   $('printEstado').textContent = 'Lendo os arquivos…';
-  try { estado.print.fotos.push(...await arquivosParaFotos(arquivos, pdfjsLib)); estado.print.pdf = null; }
+  try { estado.print.fotos.push(...await arquivosParaFotos(arquivos, pdfjsLib)); estado.print.pdf = null; prepararPdf(); }
   catch (e) { alert('Não foi possível ler um dos arquivos: ' + (e.message || e)); }
   $('printEstado').textContent = '';
   mostrarPrint();
@@ -633,16 +675,21 @@ async function receberFotosPrint(arquivos) {
 async function prepararPdf() {
   const p = estado.print;
   if (!p) return null;
-  if (p.pdf) return p.pdf;
+  const destinatario = ((($('nomes') && $('nomes').value) || '').split('\n')[0] || '').trim();
+  if (p.pdf && p.pdf.dest === destinatario) return p.pdf;
   if (p.montando) return p.montando;
   const btns = [$('printVer'), $('printBaixar')];
   btns.forEach((b) => { b.disabled = true; });
   p.montando = (async () => {
     try {
-      const blob = await montarPdfPrint(p, (t) => { $('printEstado').textContent = t; });
+      const blob = await montarPdfPrint({ conversas: p.conversas, fotos: p.fotos, anexos: p.anexos, destinatario }, (t) => { $('printEstado').textContent = t; });
       if (estado.print !== p) return null;
-      p.pdf = { blob, url: URL.createObjectURL(blob), fotos: p.fotos.length };
-      $('printEstado').textContent = `PDF pronto (${Math.max(1, Math.round(blob.size / 1024))} KB).`;
+      if (p.pdf) { const velho = p.pdf.url; setTimeout(() => URL.revokeObjectURL(velho), 120000); }
+      p.pdf = { blob, url: URL.createObjectURL(blob), dest: destinatario };
+      const tam = blob.size >= 1048576 ? (blob.size / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(blob.size / 1024)) + ' KB';
+      $('printEstado').textContent = blob.size > LIMITE_PROJUDI
+        ? `PDF pronto, mas com ${tam}: passa do limite do Projudi (2 MB). Tire algumas fotos ou o PDF de outro sistema.`
+        : `PDF pronto (${tam}).`;
       return p.pdf;
     } catch (e) {
       $('printEstado').textContent = 'Erro ao montar o PDF: ' + (e.message || e);
@@ -661,8 +708,10 @@ function nomeSugerido(p) {
     if (r) { abordador = r[1]; break; }
   }
   try { if (abordador) localStorage.setItem('ciri-abordador', abordador); else abordador = localStorage.getItem('ciri-abordador') || ''; } catch { /* sem armazenamento */ }
-  const proc = (p.cab.processo || '').match(/^(\d{7}-\d{2})/);
-  const nomeParte = (($('nomes') && $('nomes').value) || p.cab.nomeWhats || p.cab.nome || '').split('\n')[0].replace(/^~\s*/, '').trim();
+  const cab = (p.conversas[0] && p.conversas[0].cab) || {};
+  const processo = p.conversas.map((c) => c.cab.processo).find(Boolean) || '';
+  const proc = processo.match(/^(\d{7}-\d{2})/);
+  const nomeParte = (($('nomes') && $('nomes').value) || cab.nomeWhats || cab.nome || '').split('\n')[0].replace(/^~\s*/, '').trim();
   const sit = ($('situacao') && $('situacao').value) || '';
   const status = ehFrustrada(sit) ? 'Frustrada' : /EXPEDIDA|SEM_MANIF/.test(sit) ? 'Expedida' : sit ? 'Efetivada' : '';
   const data = (($('data') && $('data').value) || '').replace(/\//g, '.');
@@ -720,7 +769,7 @@ if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#le
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.7';
+export const VERSAO = '0.9.8';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }

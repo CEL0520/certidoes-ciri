@@ -1,8 +1,8 @@
 // Leitura dos arquivos anexados: PDF (texto + imagens dos prints) e imagens soltas.
 // Tudo acontece no navegador, sem enviar nada para fora.
 import * as pdfjsLib from '../lib/pdfjs/pdf.min.mjs';
-import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.9.7';
-import * as N from './nucleo.js?v=0.9.7';
+import { acharMolduras, retangulosDeImagens, acharDivisoria } from './molduras.js?v=0.9.8';
+import * as N from './nucleo.js?v=0.9.8';
 export { pdfjsLib };
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../lib/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
@@ -285,7 +285,7 @@ export async function analisarArquivo(arquivo, aviso, temOcr) {
     if (temOcr) await obterPool(aviso);
     let rotuloAnterior = '';
     for (let p = 0; p < paginas.length; p++) {
-      if (/Imagem enviada por|Documento enviado pela parte\s*:|Fotos e documentos enviados pela parte/.test(paginas[p].texto)) continue; // páginas só com fotos/documentos enviados pela parte
+      if (/Imagem enviada por|Documento enviado pela parte\s*:/.test(paginas[p].texto) || (/Fotos e documentos enviados pela parte/.test(paginas[p].texto) && !/WhatsApp Web · tela/.test(paginas[p].texto))) continue; // páginas só com fotos/documentos enviados pela parte
       const vp = paginas[p].pg.getViewport({ scale: ESCALA_PAGINA });
       const imagens = retangulosDeImagens(await paginas[p].pg.getOperatorList(), pdfjsLib.OPS, vp);
       // Página só com texto (PDF exportado com texto): lê direto, sem OCR

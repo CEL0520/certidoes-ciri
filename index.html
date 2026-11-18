@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Certidões CIRI</title>
-<link rel="stylesheet" href="estilo.css?v=0.9.7">
+<link rel="stylesheet" href="estilo.css?v=0.9.8">
 <link rel="icon" href="icones/32.png">
 </head>
 <body>
@@ -52,12 +52,18 @@
     </div>
     <div id="secPrint" class="print-pdf" hidden>
       <h3>PDF do print da conversa</h3>
-      <p id="printResumo" class="print-resumo"></p>
+      <ul id="printConversas" class="print-lista"></ul>
+      <p class="print-resumo">Outro número da mesma parte? Clique em <b>+ Adicionar outra conversa</b> (acima), abra a outra conversa no WhatsApp Web e use <b>Ler conversa → Gerar PDF do print</b>: ela entra neste mesmo PDF.</p>
+      <ul id="printAnexos" class="print-lista"></ul>
+      <div class="print-outro">
+        <label class="botao-arquivo sec">Juntar PDF de outro sistema<input type="file" id="printOutro" accept=".pdf,application/pdf" multiple hidden></label>
+        <select id="printPosicao" title="Onde o PDF de outro sistema entra"><option value="inicio">no início</option><option value="fim">no fim</option></select>
+      </div>
       <div id="printFotos" class="print-fotos"></div>
       <p id="printSemFotos" class="print-resumo">Nenhuma foto da parte foi encontrada na conversa.</p>
       <label id="printZona" class="zona zona-mini" tabindex="0">
         <input type="file" id="printArquivos" accept=".pdf,image/*" multiple hidden>
-        Arraste aqui <b>fotos ou PDFs enviados pela parte</b> (documento, selfie) — entram no PDF do print, no espaço livre ou no fim
+        Arraste aqui <b>fotos ou PDFs enviados pela parte</b> (documento, selfie) — entram no PDF do print depois das conversas, ampliadas
       </label>
       <label class="print-nome">Nome do arquivo <input id="printNome" spellcheck="false"></label>
       <div class="print-acoes"><button id="printVer">Ver PDF do print</button><button class="sec" id="printBaixar">Baixar PDF</button> <button class="sec" id="printLimpar" title="Tira este print do gerador (as certidões continuam)">Limpar print</button> <span id="printEstado" class="print-resumo"></span></div>
@@ -166,7 +172,7 @@
   </div>
 </main>
 
-<footer class="rodape">Versão <span id="versaoAtual">0.9.7</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
-<script type="module" src="js/app.js?v=0.9.7"></script>
+<footer class="rodape">Versão <span id="versaoAtual">0.9.8</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.9.8"></script>
 </body>
 </html>

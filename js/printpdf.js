@@ -31,9 +31,9 @@ async function carregarImagem(src) {
   return img;
 }
 // Normaliza qualquer imagem para JPEG (o PDF guarda o JPEG como está)
-async function paraJpeg(src, maxLado = 1800) {
+async function paraJpeg(src, maxLado = 1800, qualidade = 0.88) {
   // JPEG já no tamanho certo (telas capturadas): usa os bytes como estão, sem recomprimir
-  if (/^blob:/.test(src)) {
+  if (/^blob:/.test(src) && qualidade >= 0.85) {
     const bl = await (await fetch(src)).blob();
     if (bl.type === 'image/jpeg') {
       const bm = await createImageBitmap(bl);
@@ -51,7 +51,7 @@ async function paraJpeg(src, maxLado = 1800) {
   const g = c.getContext('2d');
   g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
   g.drawImage(img, 0, 0, c.width, c.height);
-  const url = c.toDataURL('image/jpeg', 0.88);
+  const url = c.toDataURL('image/jpeg', qualidade);
   const bin = atob(url.split(',')[1]);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -82,7 +82,7 @@ function escreverPdf(paginas) {
     objetos.push([idC, { dict: `<< /Length ${conteudo.length} >>`, stream: conteudo }]);
     const idP = novoId();
     idsPagina.push(idP);
-    objetos.push([idP, `<< /Type /Page /Parent ${idPaginas} 0 R /MediaBox [0 0 ${A4.w} ${A4.h}] /Resources << /Font << /F1 ${idF1} 0 R /F2 ${idF2} 0 R >> /XObject << ${xobj.join(' ')} >> >> /Contents ${idC} 0 R >>`]);
+    objetos.push([idP, `<< /Type /Page /Parent ${idPaginas} 0 R /MediaBox [0 0 ${pg.w || A4.w} ${pg.h || A4.h}] /Resources << /Font << /F1 ${idF1} 0 R /F2 ${idF2} 0 R >> /XObject << ${xobj.join(' ')} >> >> /Contents ${idC} 0 R >>`]);
   }
   objetos.unshift(
     [idCatalogo, `<< /Type /Catalog /Pages ${idPaginas} 0 R >>`],
@@ -112,17 +112,41 @@ function dataHora(iso) {
   return `${dois(d.getDate())}/${dois(d.getMonth() + 1)}/${d.getFullYear()}, às ${dois(d.getHours())}h${dois(d.getMinutes())}`;
 }
 
-// cab: { telefone, nomeWhats, nome, processo, quando }
-// telas: [dataURL]; fotos: [{ src, legenda }]
-export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso) {
+// conversas: [{ cab: { telefone, nomeWhats, nome, processo, quando }, telas: [src] }]
+// destinatario: nome da parte (negrito, à esquerda, no alto de cada página)
+// fotos: [{ src, legenda }]  (sempre no fim)
+// anexos: [{ nome, paginas: [src], posicao: 'inicio' | 'fim' }]  (PDFs de outros sistemas)
+const CINZA = [0.6, 0.63, 0.67];     // moldura neutra (diferente do amarelo dos prints de outros sistemas)
+// O Projudi não aceita arquivo acima de 2 MB: se passar, monta de novo com imagens mais leves
+const PERFIS = [{ tela: 1600, foto: 1600, anexo: 1700, q: 0.88 }, { tela: 1300, foto: 1300, anexo: 1400, q: 0.72 }, { tela: 1100, foto: 1100, anexo: 1200, q: 0.6 }, { tela: 950, foto: 950, anexo: 1000, q: 0.5 }];
+export const LIMITE_PROJUDI = 2 * 1024 * 1024;
+export async function montarPdfPrint(dados, aviso) {
+  let blob = null;
+  for (let n = 0; n < PERFIS.length; n++) {
+    blob = await montarComPerfil(dados, PERFIS[n], aviso);
+    if (blob.size <= LIMITE_PROJUDI * 0.97) break;
+    aviso && aviso(`O PDF ficou com ${(blob.size / 1048576).toFixed(1)} MB; reduzindo para caber no limite do Projudi (2 MB)…`);
+  }
+  return blob;
+}
+
+async function montarComPerfil(dados, perfil, aviso) {
+  const conversas = dados.conversas || [{ cab: dados.cab || {}, telas: dados.telas || [] }];
+  const fotos = dados.fotos || [];
+  const anexos = dados.anexos || [];
+  const destinatario = (dados.destinatario || conversas.map((c) => c.cab.nomeWhats || c.cab.nome).find(Boolean) || '').replace(/^~\s*/, '');
+  const quando = (conversas[0] && conversas[0].cab.quando) || new Date().toISOString();
+  const processo = conversas.map((c) => c.cab.processo).find(Boolean) || '';
+
   const paginas = [];
   let pg = null, y = 0, nImg = 0;
-  const L = A4.w - 2 * M;
-  const yPdf = (yy) => A4.h - yy; // layout de cima para baixo
+  const W = () => pg.w, H = () => pg.h;
+  const yPdf = (yy) => H() - yy;
+  const cinzaTexto = [0.35, 0.38, 0.43];
   const texto = (t, x, yy, tam, negrito, cor = [0.11, 0.14, 0.19]) => {
     pg.ops.push(`BT ${cor.join(' ')} rg /${negrito ? 'F2' : 'F1'} ${tam} Tf ${x.toFixed(2)} ${yPdf(yy).toFixed(2)} Td ${hexWinAnsi(t)} Tj ET`);
   };
-  const centro = (t, yy, tam, negrito, cor) => texto(t, (A4.w - larguraTexto(t, tam, negrito)) / 2, yy, tam, negrito, cor);
+  const centro = (t, yy, tam, negrito, cor) => texto(t, (W() - larguraTexto(t, tam, negrito)) / 2, yy, tam, negrito, cor);
   const retangulo = (x, yy, w, h, { traco, preenche, lw = 1 }) => {
     const ops = ['q'];
     if (preenche) ops.push(`${preenche.join(' ')} rg`);
@@ -135,102 +159,153 @@ export async function montarPdfPrint({ cab = {}, telas = [], fotos = [] }, aviso
     pg.imagens.push({ ...im, nome });
     pg.ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${yPdf(yy + h).toFixed(2)} cm /${nome} Do Q`);
   };
-  const tel = cab.telefone || '';
-  const grifo = (yy, tam) => { // telefone grifado em amarelo (como nos prints da CIRI)
-    if (!tel) return yy;
-    const w = larguraTexto(tel, tam, true) + 16;
-    retangulo((A4.w - w) / 2, yy, w, tam + 8, { preenche: AMARELO });
-    centro(tel, yy + tam + 2, tam, true, [0, 0, 0]);
-    return yy + tam + 8;
+  // telefone grifado em amarelo; devolve a largura usada
+  const grifo = (tel, x, yy, tam = 10) => {
+    const w = larguraTexto(tel, tam, true) + 12;
+    retangulo(x, yy, w, tam + 6, { preenche: AMARELO });
+    texto(tel, x + 6, yy + tam + 1.5, tam, true, [0, 0, 0]);
+    return w;
   };
-  const novaPagina = () => {
-    pg = { ops: [], imagens: [] };
+  const novaPagina = (cabecalho = true) => {
+    pg = { ops: [], imagens: [], w: A4.w, h: A4.h, rodape: cabecalho };
     paginas.push(pg);
     y = M;
+    if (!cabecalho) return;
     centro('PODER JUDICIÁRIO DO ESTADO DE GOIÁS', y + 9, 9.5, true);
-    centro('Diretoria Judiciária · Central de Intimação Remota do Interior (CIRI)', y + 21, 8.5, false);
-    pg.ops.push(`q 0.6 0.6 0.6 RG 0.6 w ${M + 60} ${yPdf(y + 27)} m ${A4.w - M - 60} ${yPdf(y + 27)} l S Q`);
-    y += 33;
-    if (paginas.length === 1) {
-      centro('Captura de tela de conversa no WhatsApp Web', y + 10, 10, true, [0.12, 0.23, 0.37]);
-      y += 14;
-      y = grifo(y, 11) + 3;
-      const l1 = [cab.nomeWhats || cab.nome ? `Nome exibido no WhatsApp: ${cab.nomeWhats || cab.nome}` : '', cab.processo ? `Processo nº ${cab.processo}` : ''].filter(Boolean).join('  ·  ');
-      if (l1) { centro(l1, y + 9, 8, false, [0.25, 0.28, 0.33]); y += 11; }
-      centro(`Capturado e gerado em ${dataHora(cab.quando)}`, y + 9, 8, false, [0.25, 0.28, 0.33]);
-      y += 15;
-    } else {
-      y = grifo(y, 10) + 8;
-    }
+    centro('Diretoria Judiciária · Central de Intimação Remota do Interior (CIRI)', y + 20, 8.5, false);
+    pg.ops.push(`q 0.7 0.7 0.7 RG 0.6 w ${M} ${yPdf(y + 26)} m ${W() - M} ${yPdf(y + 26)} l S Q`);
+    y += 31;
+    // destinatário em negrito, à esquerda, no alto de cada página
+    if (destinatario) texto(destinatario, M, y + 11, 11.5, true);
+    if (processo) { const t = `Processo nº ${processo}`; texto(t, W() - M - larguraTexto(t, 8.5), y + 10, 8.5, false, cinzaTexto); }
+    y += 18;
   };
-  const fundo = A4.h - M - 14; // reserva o rodapé
-  const rodapes = () => paginas.forEach((p, i) => {
-    pg = p;
-    const t = `Página ${i + 1} de ${paginas.length}`;
-    texto(t, A4.w - M - larguraTexto(t, 7.5), A4.h - M + 4, 7.5, false, [0.45, 0.45, 0.45]);
-    texto(`Gerado pelo site Certidões CIRI em ${dataHora(cab.quando)}`, M, A4.h - M + 4, 7.5, false, [0.45, 0.45, 0.45]);
-  });
+  const fundo = () => H() - M - 12;
 
-  // Fotos: sempre no fim do PDF, depois de todas as telas
+  // 1) PDFs de outros sistemas que vão no início (páginas como vieram)
+  const paginaAnexo = async (src) => {
+    const im = await paraJpeg(src, perfil.anexo, Math.min(perfil.q, 0.84));
+    novaPagina(false);
+    const k = Math.min(A4.w / im.w, A4.h / im.h);
+    imagem(im, (A4.w - im.w * k) / 2, (A4.h - im.h * k) / 2, im.w * k, im.h * k);
+  };
+  for (const a of anexos.filter((x) => x.posicao === 'inicio')) {
+    for (let i = 0; i < a.paginas.length; i++) { aviso && aviso(`Juntando ${a.nome} (página ${i + 1})…`); await paginaAnexo(a.paginas[i]); }
+  }
+
+  // 2) Conversas do WhatsApp: duas telas por página, moldura cinza; acima de cada tela, o telefone grifado
+  const total = conversas.reduce((n, c) => n + c.telas.length, 0);
+  if (total) novaPagina();
+  const B = 1.5, GAP = 8, LEG = 19;
+  let naPagina = 0;
+  let maxH = (fundo() - y - GAP) / 2 - 2 * B - LEG;
+  for (let c = 0; c < conversas.length; c++) {
+    const cv = conversas[c];
+    for (let i = 0; i < cv.telas.length; i++) {
+      aviso && aviso(`Montando o PDF: ${conversas.length > 1 ? `conversa ${c + 1}, ` : ''}tela ${i + 1} de ${cv.telas.length}…`);
+      const im = await paraJpeg(cv.telas[i], perfil.tela, perfil.q);
+      if (naPagina === 2) { novaPagina(); naPagina = 0; maxH = (fundo() - y - GAP) / 2 - 2 * B - LEG; }
+      // legenda da tela
+      let x0 = M;
+      if (cv.cab.telefone) x0 += grifo(cv.cab.telefone, M, y, 10) + 8;
+      const partes = [];
+      if (conversas.length > 1) partes.push(`Conversa ${c + 1} de ${conversas.length}`);
+      partes.push(`WhatsApp Web · tela ${i + 1} de ${cv.telas.length}`);
+      if (i === 0) {
+        if (cv.cab.nomeWhats) partes.push(`nome exibido: ${cv.cab.nomeWhats}`);
+        partes.push(`Capturado e gerado em ${dataHora(cv.cab.quando || quando)}`);
+      }
+      texto(partes.join('  ·  '), x0, y + 11, 7.5, false, cinzaTexto);
+      y += LEG;
+      let w = W() - 2 * M - 2 * B, h = w * im.h / im.w;
+      if (h > maxH) { h = maxH; w = h * im.w / im.h; }
+      const x = (W() - w) / 2;
+      retangulo(x - B / 2, y + B / 2, w + B, h + B, { traco: CINZA, lw: B });
+      imagem(im, x, y + B, w, h);
+      pg.temTela = true;
+      naPagina++;
+      y += h + 2 * B + GAP;
+    }
+  }
+
+  // 3) Fotos e documentos enviados pela parte: sempre no fim, em páginas próprias
   const fila = [];
   for (let i = 0; i < fotos.length; i++) {
     aviso && aviso(`Preparando as fotos (${i + 1} de ${fotos.length})…`);
-    try { fila.push({ ...(await paraJpeg(fotos[i].src)), legenda: fotos[i].legenda || '' }); } catch { /* imagem ilegível */ }
+    try { fila.push({ ...(await paraJpeg(fotos[i].src, perfil.foto, perfil.q)), legenda: fotos[i].legenda || '' }); } catch { /* imagem ilegível */ }
   }
   let nFoto = 0;
-  const legendaFoto = (f) => `Foto/documento enviado pela parte (${nFoto})${f.legenda ? ' · ' + f.legenda : ''}`;
-  const encaixarFotos = (minimo) => {
-    while (fila.length) {
-      const livre = fundo - y;
-      if (livre < minimo) return;
-      const f = fila[0];
-      const maxH = livre - 22, maxW = L * 0.75;
-      const k = Math.min(maxW / f.w, maxH / f.h, 1.2);
-      const w = f.w * k, h = f.h * k;
-      if (h < 120) return;
-      fila.shift(); nFoto++;
-      texto(legendaFoto(f), M, y + 10, 8.5, true, [0.12, 0.23, 0.37]);
-      const x = (A4.w - w) / 2;
-      imagem(f, x, y + 16, w, h);
-      retangulo(x, y + 16, w, h, { traco: [0.7, 0.7, 0.7], lw: 0.6 });
-      y += h + 30;
-    }
-  };
-
-  // Sempre duas telas por página, ocupando a altura toda (também na 1ª, que tem cabeçalho maior)
-  novaPagina();
-  const B = 2.5; // moldura amarela
-  const GAP = 8;
-  let naPagina = 0, maxH = (fundo - y - GAP) / 2 - 2 * B;
-  for (let i = 0; i < telas.length; i++) {
-    aviso && aviso(`Montando o PDF: tela ${i + 1} de ${telas.length}…`);
-    const im = await paraJpeg(telas[i], 1600);
-    if (naPagina === 2) { novaPagina(); naPagina = 0; maxH = (fundo - y - GAP) / 2 - 2 * B; }
-    let w = L - 2 * B;
-    let h = w * im.h / im.w;
-    if (h > maxH) { h = maxH; w = h * im.w / im.h; }
-    const x = (A4.w - w) / 2;
-    retangulo(x - B / 2, y + B / 2, w + B, h + B, { traco: AMARELO, lw: B });
-    imagem(im, x, y + B, w, h);
-    pg.temTela = true;
-    naPagina++;
-    y += h + 2 * B + GAP;
-  }
-  // Fotos que não couberam: no fim, em páginas próprias (o leitor do site pula estas páginas)
-  const paginaDeFotos = () => {
-    novaPagina();
+  const tituloFotos = () => {
     centro('Fotos e documentos enviados pela parte', y + 11, 10.5, true, [0.12, 0.23, 0.37]);
     y += 22;
   };
-  if (fila.length) paginaDeFotos(); // fotos sempre no fim, em página própria
-  while (fila.length) {
-    if (fundo - y < 220) paginaDeFotos();
-    const antes = fila.length;
-    encaixarFotos(220);
-    if (fila.length === antes) paginaDeFotos();
+  const paginaDeFotos = () => { novaPagina(); tituloFotos(); };
+  // depois da última tela: aproveita o espaço que sobrou na página; senão, página nova
+  if (fila.length) {
+    if (pg && pg.rodape && fundo() - y >= 200) { y += 6; tituloFotos(); } else paginaDeFotos();
   }
-  rodapes();
+  while (fila.length) {
+    const livre = fundo() - y;
+    const f = fila[0];
+    const k = Math.min((W() - 2 * M) / f.w, (livre - 22) / f.h, 1.6); // usa a largura toda (sem passar de 1,6× o tamanho real)
+    const w = f.w * k, h = f.h * k;
+    if (h < 150) { paginaDeFotos(); continue; }
+    fila.shift(); nFoto++;
+    texto(`Foto/documento enviado pela parte (${nFoto})${f.legenda ? ' · ' + f.legenda : ''}`, M, y + 10, 8.5, true, [0.12, 0.23, 0.37]);
+    const x = (W() - w) / 2;
+    imagem(f, x, y + 16, w, h);
+    retangulo(x, y + 16, w, h, { traco: [0.75, 0.75, 0.75], lw: 0.6 });
+    y += h + 30;
+  }
+
+  // 4) PDFs de outros sistemas que vão no fim
+  for (const a of anexos.filter((x) => x.posicao !== 'inicio')) {
+    for (let i = 0; i < a.paginas.length; i++) { aviso && aviso(`Juntando ${a.nome} (página ${i + 1})…`); await paginaAnexo(a.paginas[i]); }
+  }
+
+  // Rodapé (só nas páginas geradas aqui; as dos anexos ficam como vieram)
+  paginas.forEach((p, i) => {
+    if (!p.rodape) return;
+    pg = p;
+    const t = `Página ${i + 1} de ${paginas.length}`;
+    texto(t, W() - M - larguraTexto(t, 7.5), H() - M + 6, 7.5, false, [0.45, 0.45, 0.45]);
+    texto(`Gerado pelo site Certidões CIRI em ${dataHora(quando)}`, M, H() - M + 6, 7.5, false, [0.45, 0.45, 0.45]);
+  });
   return escreverPdf(paginas);
+}
+
+// PDF de outro sistema (ex.: o do outro chat, que já tem extensão própria): páginas viram imagens
+export async function pdfParaPaginas(arq, pdfjsLib) {
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await arq.arrayBuffer()) }).promise;
+  const paginas = [];
+  for (let p = 1; p <= Math.min(pdf.numPages, 40); p++) {
+    const pag = await pdf.getPage(p);
+    const vp = pag.getViewport({ scale: 2 });
+    const c = document.createElement('canvas');
+    c.width = vp.width; c.height = vp.height;
+    await pag.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    paginas.push(await new Promise((ok) => c.toBlob((b) => ok(URL.createObjectURL(b)), 'image/jpeg', 0.9)));
+  }
+  return paginas;
+}
+
+// Corta as margens brancas (foto dentro de um PDF): a foto fica maior no print
+function aparar(c) {
+  const g = c.getContext('2d');
+  const { width: w, height: h } = c;
+  const d = g.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+    const i = (y * w + x) * 4;
+    if (d[i] < 240 || d[i + 1] < 240 || d[i + 2] < 240) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0 || (x1 - x0) * (y1 - y0) > w * h * 0.9) return c;
+  const pad = 12;
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w, x1 + pad); y1 = Math.min(h, y1 + pad);
+  const n = document.createElement('canvas');
+  n.width = x1 - x0; n.height = y1 - y0;
+  n.getContext('2d').drawImage(c, x0, y0, n.width, n.height, 0, 0, n.width, n.height);
+  return n;
 }
 
 // Arquivos arrastados (fotos ou PDFs enviados pela parte): viram imagens para o PDF do print
@@ -243,11 +318,11 @@ export async function arquivosParaFotos(arquivos, pdfjsLib) {
       const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await arq.arrayBuffer()) }).promise;
       for (let p = 1; p <= Math.min(pdf.numPages, 10); p++) {
         const pag = await pdf.getPage(p);
-        const vp = pag.getViewport({ scale: 2 });
+        const vp = pag.getViewport({ scale: 2.5 });
         const c = document.createElement('canvas');
         c.width = vp.width; c.height = vp.height;
         await pag.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
-        fotos.push({ src: c.toDataURL('image/jpeg', 0.9), legenda: `${arq.name}${pdf.numPages > 1 ? ` (página ${p})` : ''}` });
+        fotos.push({ src: aparar(c).toDataURL('image/jpeg', 0.9), legenda: `${arq.name}${pdf.numPages > 1 ? ` (página ${p})` : ''}` });
       }
     }
   }
