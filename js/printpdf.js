@@ -173,13 +173,20 @@ async function montarComPerfil(dados, perfil, aviso) {
     if (!cabecalho) return;
     centro('PODER JUDICIÁRIO DO ESTADO DE GOIÁS', y + 9, 9.5, true);
     centro('Diretoria Judiciária · Central de Intimação Remota do Interior (CIRI)', y + 20, 8.5, false);
-    pg.ops.push(`q 0.7 0.7 0.7 RG 0.6 w ${M} ${yPdf(y + 26)} m ${W() - M} ${yPdf(y + 26)} l S Q`);
+    pg.ops.push(`q 0.7 0.7 0.7 RG 0.6 w ${xs} ${yPdf(y + 26)} m ${xs + ws} ${yPdf(y + 26)} l S Q`);
     y += 31;
-    // destinatário em negrito, à esquerda, no alto de cada página
-    if (destinatario) texto(destinatario, M, y + 11, 11.5, true);
-    if (processo) { const t = `Processo nº ${processo}`; texto(t, W() - M - larguraTexto(t, 8.5), y + 10, 8.5, false, cinzaTexto); }
-    y += 18;
+    // só na primeira folha: destinatário em negrito (alinhado à margem dos prints) e processo
+    if (!jaIdentificou) {
+      jaIdentificou = true;
+      if (destinatario) texto(destinatario, xs, y + 11, 11.5, true);
+      if (processo) { const t = `Processo nº ${processo}`; texto(t, xs + ws - larguraTexto(t, 8.5), y + 10, 8.5, false, cinzaTexto); }
+      y += 18;
+    }
   };
+  let jaIdentificou = false;
+  // margem dos prints: todas as telas têm o mesmo tamanho; textos alinham com a borda delas
+  let xs = M, ws = A4.w - 2 * M;
+  const invisivel = (t, x, yy) => pg.ops.push(`q BT 3 Tr /F1 6 Tf ${x.toFixed(2)} ${yPdf(yy).toFixed(2)} Td ${hexWinAnsi(t)} Tj ET Q`);
   const fundo = () => H() - M - 12;
 
   // 1) PDFs de outros sistemas que vão no início (páginas como vieram)
@@ -193,35 +200,42 @@ async function montarComPerfil(dados, perfil, aviso) {
     for (let i = 0; i < a.paginas.length; i++) { aviso && aviso(`Juntando ${a.nome} (página ${i + 1})…`); await paginaAnexo(a.paginas[i]); }
   }
 
-  // 2) Conversas do WhatsApp: duas telas por página, moldura cinza; acima de cada tela, o telefone grifado
+  // 2) Conversas do WhatsApp: duas telas por página, moldura cinza.
+  //    Telefone grifado só acima da primeira tela de cada conversa (outro número = outra conversa)
   const total = conversas.reduce((n, c) => n + c.telas.length, 0);
-  if (total) novaPagina();
   const B = 1.5, GAP = 8, LEG = 19;
+  if (total) {
+    const prim = await paraJpeg(conversas.find((c) => c.telas.length).telas[0], perfil.tela, perfil.q);
+    // altura disponível na primeira folha (cabeçalho + nome) para duas telas, cada uma com legenda
+    const alturaUtil = A4.h - M - 12 - (M + 31 + 18);
+    const hMax = (alturaUtil - GAP) / 2 - 2 * B - LEG;
+    ws = Math.min(A4.w - 2 * M - 2 * B, hMax * prim.w / prim.h);
+    xs = (A4.w - ws) / 2;
+    novaPagina();
+  }
   let naPagina = 0;
-  let maxH = (fundo() - y - GAP) / 2 - 2 * B - LEG;
   for (let c = 0; c < conversas.length; c++) {
     const cv = conversas[c];
     for (let i = 0; i < cv.telas.length; i++) {
       aviso && aviso(`Montando o PDF: ${conversas.length > 1 ? `conversa ${c + 1}, ` : ''}tela ${i + 1} de ${cv.telas.length}…`);
       const im = await paraJpeg(cv.telas[i], perfil.tela, perfil.q);
-      if (naPagina === 2) { novaPagina(); naPagina = 0; maxH = (fundo() - y - GAP) / 2 - 2 * B - LEG; }
-      // legenda da tela
-      let x0 = M;
-      if (cv.cab.telefone) x0 += grifo(cv.cab.telefone, M, y, 10) + 8;
-      const partes = [];
-      if (conversas.length > 1) partes.push(`Conversa ${c + 1} de ${conversas.length}`);
-      partes.push(`WhatsApp Web · tela ${i + 1} de ${cv.telas.length}`);
-      if (i === 0) {
-        if (cv.cab.nomeWhats) partes.push(`nome exibido: ${cv.cab.nomeWhats}`);
+      if (naPagina === 2) { novaPagina(); naPagina = 0; }
+      if (i === 0) { // legenda: só na primeira tela de cada conversa
+        let x0 = xs;
+        if (cv.cab.telefone) x0 += grifo(cv.cab.telefone, xs, y, 10) + 8;
+        const partes = [];
+        if (conversas.length > 1) partes.push(`Conversa ${c + 1} de ${conversas.length}`);
+        partes.push('WhatsApp Web');
         partes.push(`Capturado e gerado em ${dataHora(cv.cab.quando || quando)}`);
+        texto(partes.join('  ·  '), x0, y + 11, 7.5, false, cinzaTexto);
+        y += LEG;
       }
-      texto(partes.join('  ·  '), x0, y + 11, 7.5, false, cinzaTexto);
-      y += LEG;
-      let w = W() - 2 * M - 2 * B, h = w * im.h / im.w;
-      if (h > maxH) { h = maxH; w = h * im.w / im.h; }
-      const x = (W() - w) / 2;
-      retangulo(x - B / 2, y + B / 2, w + B, h + B, { traco: CINZA, lw: B });
-      imagem(im, x, y + B, w, h);
+      invisivel(`WhatsApp Web · tela ${i + 1} de ${cv.telas.length}${cv.cab.telefone ? ' · ' + cv.cab.telefone : ''}`, xs, y + 6);
+      let w = ws, h = ws * im.h / im.w;
+      const lim = fundo() - y - 2 * B;
+      if (h > lim) { h = lim; w = h * im.w / im.h; } // tela de outro formato: encolhe sem distorcer
+      imagem(im, xs, y + B, w, h);
+      retangulo(xs - B / 2, y + B / 2, w + B, h + B, { traco: CINZA, lw: B });
       pg.temTela = true;
       naPagina++;
       y += h + 2 * B + GAP;
@@ -247,12 +261,12 @@ async function montarComPerfil(dados, perfil, aviso) {
   while (fila.length) {
     const livre = fundo() - y;
     const f = fila[0];
-    const k = Math.min((W() - 2 * M) / f.w, (livre - 22) / f.h, 1.6); // usa a largura toda (sem passar de 1,6× o tamanho real)
+    const k = Math.min(ws / f.w, (livre - 22) / f.h, 1.6); // usa a largura toda (sem passar de 1,6× o tamanho real)
     const w = f.w * k, h = f.h * k;
     if (h < 150) { paginaDeFotos(); continue; }
     fila.shift(); nFoto++;
-    texto(`Foto/documento enviado pela parte (${nFoto})${f.legenda ? ' · ' + f.legenda : ''}`, M, y + 10, 8.5, true, [0.12, 0.23, 0.37]);
     const x = (W() - w) / 2;
+    texto(`Foto/documento enviado pela parte (${nFoto})${f.legenda ? ' · ' + f.legenda : ''}`, x, y + 10, 8.5, true, [0.12, 0.23, 0.37]);
     imagem(f, x, y + 16, w, h);
     retangulo(x, y + 16, w, h, { traco: [0.75, 0.75, 0.75], lw: 0.6 });
     y += h + 30;
@@ -267,9 +281,9 @@ async function montarComPerfil(dados, perfil, aviso) {
   paginas.forEach((p, i) => {
     if (!p.rodape) return;
     pg = p;
-    const t = `Página ${i + 1} de ${paginas.length}`;
-    texto(t, W() - M - larguraTexto(t, 7.5), H() - M + 6, 7.5, false, [0.45, 0.45, 0.45]);
-    texto(`Gerado pelo site Certidões CIRI em ${dataHora(quando)}`, M, H() - M + 6, 7.5, false, [0.45, 0.45, 0.45]);
+    const t = `Página ${i + 1 + (dados.paginasAntes || 0)} de ${paginas.length + (dados.paginasAntes || 0) + (dados.paginasDepois || 0)}`;
+    texto(t, xs + ws - larguraTexto(t, 7.5), H() - M + 6, 7.5, false, [0.45, 0.45, 0.45]); // alinhado com a margem dos prints
+    texto(`Gerado pelo site Certidões CIRI em ${dataHora(quando)}`, xs, H() - M + 6, 7.5, false, [0.45, 0.45, 0.45]);
   });
   return escreverPdf(paginas);
 }

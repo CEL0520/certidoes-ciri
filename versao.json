@@ -1,10 +1,9 @@
 {
-  "versao": "0.9.8",
+  "versao": "0.10.0",
   "data": "18/11/2026",
   "novidades": [
-    "PDF do print: várias conversas (outros números) num só PDF, com Adicionar outra conversa",
-    "juntar PDF de outro sistema no início ou no fim",
-    "moldura cinza; nome do destinatário no alto de cada página; telefone grifado acima de cada tela",
-    "fotos ampliadas, depois das conversas; PDF ajustado ao limite de 2 MB do Projudi"
+    "nova ferramenta: juntar ou dividir PDFs e prints (e-mail, WhatsApp, outros sistemas), com partes de até 2 MB",
+    "PDF de outro sistema entra com as páginas originais",
+    "PDF do print: sem 'nome exibido'; rodapé alinhado com os prints"
   ]
 }

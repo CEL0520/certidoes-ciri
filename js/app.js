@@ -1,6 +1,7 @@
-import * as N from './nucleo.js?v=0.9.8';
-import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.9.8';
-import { montarPdfPrint, arquivosParaFotos, pdfParaPaginas, LIMITE_PROJUDI } from './printpdf.js?v=0.9.8';
+import * as N from './nucleo.js?v=0.10.0';
+import { analisarArquivo, ocrInstalado, desenharPrint, pdfjsLib } from './leitura.js?v=0.10.0';
+import { montarPdfPrint, arquivosParaFotos, pdfParaPaginas, LIMITE_PROJUDI } from './printpdf.js?v=0.10.0';
+import * as J from './juntar.js?v=0.10.0';
 
 const $ = (id) => document.getElementById(id);
 const estado = window.__ciri = {
@@ -589,7 +590,7 @@ window.addEventListener('message', (e) => {
   const el = $('botaoLeitor');
   if (!el || /^(chrome|moz)-extension:/.test(location.protocol)) { const s = $('secLeitor'); if (s) s.hidden = true; return; }
   try {
-    const cod = await (await fetch('leitor.min.js?v=0.9.8', { cache: 'no-store' })).text();
+    const cod = await (await fetch('leitor.min.js?v=0.10.0', { cache: 'no-store' })).text();
     const site = location.origin + location.pathname.replace(/index\.html$/, '');
     el.href = 'javascript:' + encodeURIComponent(cod.replace('__SITE__', site).trim());
   } catch { const s = $('secLeitor'); if (s) s.hidden = true; }
@@ -627,7 +628,7 @@ function mostrarPrint() {
     sel.innerHTML = '<option value="inicio">no início</option><option value="fim">no fim</option>';
     sel.value = a.posicao;
     sel.onchange = () => { a.posicao = sel.value; p.pdf = null; prepararPdf(); };
-    return item(`Outro sistema: ${a.nome} (${a.paginas.length} pág.)`, () => { p.anexos.splice(i, 1); p.pdf = null; mostrarPrint(); }, sel);
+    return item(`Outro sistema: ${a.nome}${a.n ? ` (${a.n} pág.)` : ''}`, () => { p.anexos.splice(i, 1); p.pdf = null; mostrarPrint(); }, sel);
   }));
   const box = $('printFotos');
   box.replaceChildren(...p.fotos.map((f, i) => {
@@ -648,7 +649,12 @@ async function receberOutroSistema(arquivos) {
   if (!estado.print) estado.print = { conversas: [], fotos: [], anexos: [] };
   $('printEstado').textContent = 'Lendo o PDF de outro sistema…';
   try {
-    for (const a of pdfs) estado.print.anexos.push({ nome: a.name, paginas: await pdfParaPaginas(a, pdfjsLib), posicao: $('printPosicao').value });
+    for (const a of pdfs) {
+      const bytes = new Uint8Array(await a.arrayBuffer());
+      let n = 0;
+      try { n = await J.contarPaginas(a); } catch { n = 0; }
+      estado.print.anexos.push({ nome: a.name, arquivo: a, bytes, n, posicao: $('printPosicao').value });
+    }
     estado.print.pdf = null;
   } catch (e) { alert('Não foi possível ler o PDF: ' + (e.message || e)); }
   $('printEstado').textContent = '';
@@ -682,7 +688,18 @@ async function prepararPdf() {
   btns.forEach((b) => { b.disabled = true; });
   p.montando = (async () => {
     try {
-      const blob = await montarPdfPrint({ conversas: p.conversas, fotos: p.fotos, anexos: p.anexos, destinatario }, (t) => { $('printEstado').textContent = t; });
+      const avisoPdf = (t) => { $('printEstado').textContent = t; };
+      let blob = null;
+      const soma = (pos) => p.anexos.filter((x) => (x.posicao === 'inicio') === (pos === 'inicio')).reduce((n, x) => n + (x.n || 0), 0);
+      if (p.conversas.length || p.fotos.length) blob = await montarPdfPrint({ conversas: p.conversas, fotos: p.fotos, anexos: [], destinatario, paginasAntes: soma('inicio'), paginasDepois: soma('fim') }, avisoPdf);
+      if (p.anexos.length) {
+        // PDFs de outros sistemas: páginas originais (texto continua selecionável)
+        try { blob = await J.juntarComAnexos(blob, p.anexos); }
+        catch (e) { // PDF protegido ou com defeito: entra como imagem
+          for (const a of p.anexos) if (!a.paginas) a.paginas = await pdfParaPaginas(a.arquivo, pdfjsLib);
+          blob = await montarPdfPrint({ conversas: p.conversas, fotos: p.fotos, anexos: p.anexos, destinatario }, avisoPdf);
+        }
+      }
       if (estado.print !== p) return null;
       if (p.pdf) { const velho = p.pdf.url; setTimeout(() => URL.revokeObjectURL(velho), 120000); }
       p.pdf = { blob, url: URL.createObjectURL(blob), dest: destinatario };
@@ -755,6 +772,110 @@ $('printBaixar').onclick = async () => {
   document.body.appendChild(a); a.click(); a.remove();
   $('printEstado').textContent = 'PDF baixado: ' + a.download;
 };
+
+// ---------- Juntar ou dividir PDFs e prints ----------
+const ferramenta = { itens: [], resultado: null };
+const kb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB');
+function nomeBase() { return ($('juntarNome').value.trim() || 'documentos juntados').replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|]+/g, ' '); }
+function baixar(bytes, nome) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  const a = document.createElement('a'); a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+function mostrarFerramenta() {
+  const ul = $('juntarLista');
+  ul.replaceChildren(...ferramenta.itens.map((it, i) => {
+    const li = document.createElement('li');
+    const sp = document.createElement('span');
+    sp.textContent = `${i + 1}. ${it.arq.name} · ${it.n ? it.n + ' pág. · ' : ''}${kb(it.arq.size)}`;
+    const b = (t, tt, f, dis) => { const x = document.createElement('button'); x.className = 'sec'; x.textContent = t; x.title = tt; x.disabled = !!dis; x.onclick = () => { f(); ferramenta.resultado = null; mostrarFerramenta(); }; return x; };
+    li.append(sp,
+      b('↑', 'Subir', () => { [ferramenta.itens[i - 1], ferramenta.itens[i]] = [ferramenta.itens[i], ferramenta.itens[i - 1]]; }, i === 0),
+      b('↓', 'Descer', () => { [ferramenta.itens[i + 1], ferramenta.itens[i]] = [ferramenta.itens[i], ferramenta.itens[i + 1]]; }, i === ferramenta.itens.length - 1),
+      b('tirar', 'Tirar da lista', () => { ferramenta.itens.splice(i, 1); }));
+    return li;
+  }));
+  const tem = ferramenta.itens.length > 0;
+  ['juntarBotao', 'dividirBotao', 'dividir2mb', 'juntarLimpar'].forEach((id) => { $(id).disabled = !tem; });
+  $('juntarVazio').hidden = tem;
+}
+async function receberParaJuntar(arquivos) {
+  const ok = arquivos.filter((a) => J.ehPdf(a) || J.ehImagem(a));
+  for (const arq of ok) {
+    let n = 1;
+    try { n = await J.contarPaginas(arq); } catch { n = 0; }
+    ferramenta.itens.push({ arq, n });
+  }
+  if (!$('juntarNome').value && ok[0]) $('juntarNome').value = ok[0].name.replace(/\.[^.]+$/, '');
+  ferramenta.resultado = null;
+  $('juntarEstado').textContent = ok.length < arquivos.length ? 'Alguns arquivos foram ignorados (só PDF e imagens).' : '';
+  mostrarFerramenta();
+}
+// documento atual: os itens juntados, na ordem da lista
+async function documentoAtual() {
+  if (ferramenta.resultado) return ferramenta.resultado;
+  const t = (x) => { $('juntarEstado').textContent = x; };
+  ferramenta.resultado = await J.juntar(ferramenta.itens.map((i) => i.arq), t);
+  return ferramenta.resultado;
+}
+async function executar(botao, tarefa) {
+  const b = $(botao); b.disabled = true;
+  $('juntarResultados').replaceChildren();
+  try { await tarefa(); } catch (e) { $('juntarEstado').textContent = 'Erro: ' + (e.message || e); }
+  b.disabled = false;
+}
+function listarResultados(partes) {
+  $('juntarResultados').replaceChildren(...partes.map((p) => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = '#'; a.textContent = p.nome;
+    a.onclick = (e) => { e.preventDefault(); baixar(p.bytes, p.nome); };
+    const sp = document.createElement('span');
+    sp.textContent = ` · ${kb(p.bytes.length)}${p.bytes.length > LIMITE_PROJUDI ? ' — passa de 2 MB' : ''}`;
+    if (p.bytes.length > LIMITE_PROJUDI) sp.className = 'alerta';
+    li.append(a, sp);
+    return li;
+  }));
+}
+{
+  const z = $('juntarZona');
+  z.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); z.classList.add('sobre'); });
+  z.addEventListener('dragleave', () => z.classList.remove('sobre'));
+  z.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); z.classList.remove('sobre'); receberParaJuntar([...e.dataTransfer.files]); });
+  $('juntarArquivos').addEventListener('change', (e) => { receberParaJuntar([...e.target.files]); e.target.value = ''; });
+  $('juntarLimpar').onclick = () => { ferramenta.itens = []; ferramenta.resultado = null; $('juntarResultados').replaceChildren(); $('juntarEstado').textContent = ''; $('juntarNome').value = ''; mostrarFerramenta(); };
+  $('juntarBotao').onclick = () => executar('juntarBotao', async () => {
+    let bytes = await documentoAtual();
+    const nome = nomeBase() + '.pdf';
+    const partes = [{ nome, bytes }];
+    if (bytes.length > LIMITE_PROJUDI) {
+      $('juntarEstado').textContent = `Ficou com ${kb(bytes.length)}. Gerando também uma versão reduzida…`;
+      const red = await J.reduzir(bytes, pdfjsLib, LIMITE_PROJUDI * 0.97, (t) => { $('juntarEstado').textContent = t; });
+      partes.push({ nome: nomeBase() + ' (reduzido).pdf', bytes: red });
+    }
+    listarResultados(partes);
+    baixar(partes[partes.length - 1].bytes, partes[partes.length - 1].nome);
+    $('juntarEstado').textContent = partes.length > 1 ? 'Baixada a versão reduzida (as páginas viram imagem). A original também está na lista.' : `PDF juntado (${kb(bytes.length)}).`;
+  });
+  $('dividirBotao').onclick = () => executar('dividirBotao', async () => {
+    const bytes = await documentoAtual();
+    const total = (await (await J.pdfLib()).PDFDocument.load(bytes)).getPageCount();
+    const intervalos = J.lerIntervalos($('dividirPaginas').value, total);
+    if (!intervalos.length) { $('juntarEstado').textContent = `Escreva as páginas de cada parte, por exemplo: 1-2; 3-${total}`; return; }
+    const partes = (await J.dividir(bytes, intervalos)).map((p) => ({ nome: `${nomeBase()} - páginas ${p.ini === p.fim ? p.ini : p.ini + '-' + p.fim}.pdf`, bytes: p.bytes }));
+    listarResultados(partes);
+    $('juntarEstado').textContent = `${partes.length} parte(s) prontas: clique em cada uma para baixar.`;
+  });
+  $('dividir2mb').onclick = () => executar('dividir2mb', async () => {
+    const bytes = await documentoAtual();
+    const partes = (await J.dividirPorTamanho(bytes, LIMITE_PROJUDI * 0.97, (t) => { $('juntarEstado').textContent = t; }))
+      .map((p, i, l) => ({ nome: `${nomeBase()} - parte ${i + 1} de ${l.length}.pdf`, bytes: p.bytes }));
+    listarResultados(partes);
+    $('juntarEstado').textContent = `${partes.length} parte(s) de até 2 MB: clique em cada uma para baixar.`;
+  });
+  mostrarFerramenta();
+}
 // Extensão: a conversa lida chega pelo serviço da extensão
 if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#leitor') {
   const api = typeof browser !== 'undefined' ? browser : chrome;
@@ -769,7 +890,7 @@ if (/^(chrome|moz)-extension:/.test(location.protocol) && location.hash === '#le
 // ---------- Aviso de nova versão ----------
 // O site lê versao.json direto do GitHub (sem cache). Se houver versão mais nova que a carregada,
 // mostra uma faixa no topo; "Atualizar agora" recarrega a página com os arquivos novos.
-export const VERSAO = '0.9.8';
+export const VERSAO = '0.10.0';
 const maisNova = (a, b) => {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
   for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }

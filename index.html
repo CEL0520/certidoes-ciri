@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Certidões CIRI</title>
-<link rel="stylesheet" href="estilo.css?v=0.9.8">
+<link rel="stylesheet" href="estilo.css?v=0.10.0">
 <link rel="icon" href="icones/32.png">
 </head>
 <body>
@@ -169,10 +169,32 @@
     <p class="dica">Confira com o print ao lado. Você pode ajustar o texto direto na caixa; se mudar algum dado abaixo, o texto é refeito. <b>Copiar com formatação</b> leva o texto em Arial 16, justificado, com negrito e itálico, sem cor (fica na cor do Projudi).</p>
     <div id="certidoes"></div>
   </section>
+  <details class="painel ferramenta" id="secJuntar">
+    <summary><h2><span class="num">+</span> Juntar ou dividir PDFs e prints</h2></summary>
+    <p class="dica">Junta prints já feitos — e-mail, WhatsApp, outro sistema, fotos — num único PDF, na ordem da lista. Também divide um PDF em partes (por páginas ou em partes de até 2 MB, o limite do Projudi). Nada sai deste computador.</p>
+    <label id="juntarZona" class="zona zona-mini" tabindex="0">
+      <input type="file" id="juntarArquivos" accept=".pdf,application/pdf,image/*" multiple hidden>
+      Arraste aqui os <b>PDFs ou imagens</b> (ou clique para escolher)
+    </label>
+    <p id="juntarVazio" class="print-resumo">Nenhum arquivo ainda.</p>
+    <ul id="juntarLista" class="print-lista"></ul>
+    <label class="print-nome">Nome do arquivo <input id="juntarNome" spellcheck="false" placeholder="ex.: Osvaldo - 5059047-77 - Nome da Parte - Frustrada - 18.11.2026"></label>
+    <div class="print-acoes">
+      <button id="juntarBotao">Juntar em um PDF</button>
+      <button class="sec" id="dividir2mb">Dividir em partes de até 2 MB</button>
+      <button class="sec" id="juntarLimpar">Limpar</button>
+    </div>
+    <div class="print-acoes" style="margin-top:8px">
+      <label class="mini-sel">Dividir por páginas <input id="dividirPaginas" placeholder="ex.: 1-2; 3-5; 6-fim" style="width:180px"></label>
+      <button class="sec" id="dividirBotao">Dividir</button>
+    </div>
+    <p id="juntarEstado" class="print-resumo"></p>
+    <ul id="juntarResultados" class="print-lista"></ul>
+  </details>
   </div>
 </main>
 
-<footer class="rodape">Versão <span id="versaoAtual">0.9.8</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
-<script type="module" src="js/app.js?v=0.9.8"></script>
+<footer class="rodape">Versão <span id="versaoAtual">0.10.0</span> · os prints são lidos neste computador e não são guardados nem enviados.</footer>
+<script type="module" src="js/app.js?v=0.10.0"></script>
 </body>
 </html>
